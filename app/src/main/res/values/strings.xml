@@ -1,0 +1,62 @@
+<resources>
+    <string name="app_name">VirtualCloset</string>
+
+    <!-- Welcome Screen -->
+    <string name="welcome_title">Virtual Closet</string>
+    <string name="welcome_button">ENTER</string>
+
+    <!-- Main Navigation -->
+    <string name="nav_closet">Closet</string>
+    <string name="nav_dress_me">Dress Me</string>
+    <string name="nav_assistant">Assistant</string>
+    <string name="nav_profile">Profile</string>
+
+    <!-- My Closet Screen -->
+    <string name="closet_title">My Closet</string>
+    <string name="add_item_button">Add Item</string>
+
+    <!-- Add Item Dialog -->
+    <string name="add_item_title">Add New Item</string>
+    <string name="add_photo">ADD PHOTO</string>
+    <string name="item_name_label">Item Name</string>
+    <string name="category_top">Top</string>
+    <string name="category_bottom">Bottom</string>
+    <string name="styles_label">Styles (e.g., Casual, Sporty)</string>
+    <string name="save_button">SAVE</string>
+
+    <!-- Dress Me Screen -->
+    <string name="dress_me_title">Dress Me</string>
+    <string name="match_button">MATCH</string>
+    <string name="match_success">IT\'S A MATCH!</string>
+    <string name="match_fail">MISMATCH! (AS IF!)</string>
+    <string name="no_items">No Items!</string>
+
+    <!-- Assistant Hub Screen -->
+    <string name="assistant_title">Assistant</string>
+    <string name="assistant_greeting">Hey! What do you wanna do?</string>
+    <string name="assistant_take_test">Take Style Test</string>
+    <string name="assistant_plan_outfits">Plan Outfits (Calendar)</string>
+
+    <!-- Style Test Screen -->
+    <string name="style_test_title">Style Test</string>
+    <string name="next_button">NEXT</string>
+    <string name="back_button">BACK</string>
+
+    <!-- Style Test Result Screen -->
+    <string name="test_result_title">As If!</string>
+    <string name="test_result_subtitle">Based on your vibes, I think this would look totally cute on you!</string>
+    <string name="test_result_no_outfit">OMG, I couldn\'t find anything! Add more clothes!</string>
+
+    <!-- Profile Screen -->
+    <string name="profile_title">Profile &amp; Settings</string>
+    <string name="profile_language">Language</string>
+    <string name="profile_font_size">Font Size</string>
+    <string name="profile_username">Username</string>
+    <string name="profile_change_assistant">Change Assistant</string>
+
+    <!-- Calendar Screen -->
+    <string name="calendar_title">Outfit Calendar</string>
+    <string name="plan_outfit_button">Plan outfit for day</string>
+    <string name="no_outfits_to_plan">Create outfits in \'Dress Me\' to plan them!</string>
+
+</resources>

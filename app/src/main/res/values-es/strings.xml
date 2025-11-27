@@ -1,0 +1,62 @@
+<resources>
+    <string name="app_name">VirtualCloset</string>
+
+    <!-- Welcome Screen -->
+    <string name="welcome_title">Armario Virtual</string>
+    <string name="welcome_button">ENTRAR</string>
+
+    <!-- Main Navigation -->
+    <string name="nav_closet">Armario</string>
+    <string name="nav_dress_me">Vísteme</string>
+    <string name="nav_assistant">Asistente</string>
+    <string name="nav_profile">Perfil</string>
+
+    <!-- My Closet Screen -->
+    <string name="closet_title">Mi Armario</string>
+    <string name="add_item_button">Añadir Prenda</string>
+
+    <!-- Add Item Dialog -->
+    <string name="add_item_title">Añadir Nueva Prenda</string>
+    <string name="add_photo">AÑADIR FOTO</string>
+    <string name="item_name_label">Nombre de la Prenda</string>
+    <string name="category_top">Top</string>
+    <string name="category_bottom">Bottom</string>
+    <string name="styles_label">Estilos (ej: Casual, Sporty)</string>
+    <string name="save_button">GUARDAR</string>
+
+    <!-- Dress Me Screen -->
+    <string name="dress_me_title">Vísteme</string>
+    <string name="match_button">COMBINAR</string>
+    <string name="match_success">¡COMBINACIÓN PERFECTA!</string>
+    <string name="match_fail">¡QUÉ HORROR! ¡Paso!</string>
+    <string name="no_items">¡No hay prendas!</string>
+
+    <!-- Assistant Hub Screen -->
+    <string name="assistant_title">Asistente</string>
+    <string name="assistant_greeting">¡Hola! ¿Qué quieres hacer?</string>
+    <string name="assistant_take_test">Hacer Test de Estilo</string>
+    <string name="assistant_plan_outfits">Planificar Outfits</string>
+
+    <!-- Style Test Screen -->
+    <string name="style_test_title">Test de Estilo</string>
+    <string name="next_button">SIGUIENTE</string>
+    <string name="back_button">VOLVER</string>
+
+    <!-- Style Test Result Screen -->
+    <string name="test_result_title">¡Como si!</string>
+    <string name="test_result_subtitle">Según tus vibras, ¡creo que esto te quedaría súper mono!</string>
+    <string name="test_result_no_outfit">¡OMG, no encontré nada! ¡Añade más ropa!</string>
+
+    <!-- Profile Screen -->
+    <string name="profile_title">Perfil y Ajustes</string>
+    <string name="profile_language">Idioma</string>
+    <string name="profile_font_size">Tamaño de Letra</string>
+    <string name="profile_username">Nombre de Usuario</string>
+    <string name="profile_change_assistant">Cambiar Asistente</string>
+
+    <!-- Calendar Screen -->
+    <string name="calendar_title">Calendario de Outfits</string>
+    <string name="plan_outfit_button">Planificar Outfit</string>
+    <string name="no_outfits_to_plan">¡Crea outfits en \'Vísteme\' para poder planificar!</string>
+
+</resources>

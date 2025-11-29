@@ -57,6 +57,14 @@
     <!-- Calendar Screen -->
     <string name="calendar_title">Calendario de Outfits</string>
     <string name="plan_outfit_button">Planificar Outfit</string>
-    <string name="no_outfits_to_plan">¡Crea outfits en \'Vísteme\' para poder planificar!</string>
+    <string name="no_outfits_to_plan">¡Crea outfits en Vísteme para poder planificar!</string>
 
+
+    <string name="calendar_dialog_title">Outfit para %1$s</string>
+    <string name="calendar_dialog_no_outfit">No tienes outfit planeado. ¿Planear uno?</string>
+    <string name="select_top">Seleccionar Parte de arriba</string>
+    <string name="select_bottom">Seleccionar Parte de abajo</string>
+    <string name="plan_button">PLANEAR</string>
+    <string name="remove_button">QUITAR</string>
+    <string name="change_button">MODIFICAR</string>
 </resources>

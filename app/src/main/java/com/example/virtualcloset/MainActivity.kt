@@ -1,8 +1,13 @@
 package com.example.virtualcloset
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -35,6 +40,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -109,38 +115,46 @@ class MainActivity : ComponentActivity() {
         setContent {
             val viewModel: SharedViewModel = viewModel()
             val language = viewModel.language
-            val context = LocalContext.current
-
-// --- CÓDIGO CORREGIDO ---
-// Crea un nuevo contexto con el idioma actualizado sin usar APIs obsoletas.
-            val localizedContext = remember(language, context) {
-                val locale = Locale(if (language == "English") "en" else "es")
-                val configuration = Configuration(context.resources.configuration).apply {
-                    setLocale(locale)
-                }
-                context.createConfigurationContext(configuration)
-            }
-// --- FIN DEL CÓDIGO CORREGIDO ---
-
             val fontSizeMultiplier = viewModel.fontSizeMultiplier
-            val dynamicTypography = AppTypography.copy(
-                displayLarge = AppTypography.displayLarge.copy(fontSize = AppTypography.displayLarge.fontSize * fontSizeMultiplier),
-                headlineLarge = AppTypography.headlineLarge.copy(fontSize = AppTypography.headlineLarge.fontSize * fontSizeMultiplier),
-                bodyLarge = AppTypography.bodyLarge.copy(fontSize = AppTypography.bodyLarge.fontSize * fontSizeMultiplier),
-                labelSmall = AppTypography.labelSmall.copy(fontSize = AppTypography.labelSmall.fontSize * fontSizeMultiplier)
-            )
 
-            CompositionLocalProvider(LocalContext provides localizedContext) {
-                VirtualClosetTheme(typography = dynamicTypography) {
-                    Surface(modifier = Modifier.fillMaxSize()) { // Ensure the theme background is applied everywhere
-                        val navController = rememberNavController()
-                        NavHost(navController = navController, startDestination = Screen.Welcome.route) {
-                            composable(Screen.Welcome.route) { WelcomeScreen { navController.navigate(Screen.Main.route) { popUpTo(Screen.Welcome.route) { inclusive = true } } } }
-                            composable(Screen.Main.route) { MainScreen() }
-                        }
+            // This wrapper Composable will react to state changes and update the theme and context
+            AppThemeWrapper(language = language, fontSizeMultiplier = fontSizeMultiplier) {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    val navController = rememberNavController()
+                    NavHost(navController = navController, startDestination = Screen.Welcome.route) {
+                        composable(Screen.Welcome.route) { WelcomeScreen { navController.navigate(Screen.Main.route) { popUpTo(Screen.Welcome.route) { inclusive = true } } } }
+                        composable(Screen.Main.route) { MainScreen() }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun AppThemeWrapper(language: String, fontSizeMultiplier: Float, content: @Composable () -> Unit) {
+    val context = LocalContext.current
+
+    val localizedContext = remember(language, context) {
+        val locale = Locale(if (language == "English") "en" else "es")
+        val configuration = Configuration(context.resources.configuration).apply {
+            setLocale(locale)
+        }
+        context.createConfigurationContext(configuration)
+    }
+
+    val dynamicTypography = remember(fontSizeMultiplier) {
+        AppTypography.copy(
+            displayLarge = AppTypography.displayLarge.copy(fontSize = AppTypography.displayLarge.fontSize * fontSizeMultiplier),
+            headlineLarge = AppTypography.headlineLarge.copy(fontSize = AppTypography.headlineLarge.fontSize * fontSizeMultiplier),
+            bodyLarge = AppTypography.bodyLarge.copy(fontSize = AppTypography.bodyLarge.fontSize * fontSizeMultiplier),
+            labelSmall = AppTypography.labelSmall.copy(fontSize = AppTypography.labelSmall.fontSize * fontSizeMultiplier)
+        )
+    }
+
+    CompositionLocalProvider(LocalContext provides localizedContext) {
+        VirtualClosetTheme(typography = dynamicTypography) {
+            content()
         }
     }
 }
@@ -197,10 +211,23 @@ fun MainAppNavGraph(navController: NavHostController, viewModel: SharedViewModel
 fun MyClosetScreen(viewModel: SharedViewModel) {
     var showAddItemDialog by remember { mutableStateOf(false) }
     if (showAddItemDialog) {
-        AddItemDialog(onDismiss = { showAddItemDialog = false }, onAddItem = { name, category, styles, uri -> viewModel.addClothingItem(name, category, styles, uri); showAddItemDialog = false })
+        AddItemDialog(
+            onDismiss = { showAddItemDialog = false },
+            onAddItem = { name, category, styles, uri ->
+                viewModel.addClothingItem(name, category, styles, uri)
+                showAddItemDialog = false
+            }
+        )
     }
     CluelessScreenContainer {
-        Scaffold(containerColor = Color.Transparent, floatingActionButton = { FloatingActionButton(onClick = { showAddItemDialog = true }, containerColor = Color(0xFF6A00A8)) { Icon(Icons.Default.Add, stringResource(id = R.string.add_item_button), tint = Color.White) } }) {
+        Scaffold(
+            containerColor = Color.Transparent,
+            floatingActionButton = {
+                FloatingActionButton(onClick = { showAddItemDialog = true }, containerColor = Color(0xFF6A00A8)) {
+                    Icon(Icons.Default.Add, stringResource(id = R.string.add_item_button), tint = Color.White)
+                }
+            }
+        ) {
             Column(modifier = Modifier.padding(it).padding(16.dp)) {
                 ScreenTitle(stringResource(id = R.string.closet_title))
                 LazyVerticalGrid(columns = GridCells.Fixed(2), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -252,11 +279,37 @@ fun AssistantScreen(navController: NavController) {
 
 @Composable
 fun CalendarScreen(viewModel: SharedViewModel) {
-    // Basic calendar implementation
     CluelessScreenContainer {
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
             ScreenTitle(stringResource(id = R.string.calendar_title))
-            Text("Calendar coming soon!", style = MaterialTheme.typography.bodyLarge.copy(color = Color.White))
+            Spacer(modifier = Modifier.height(32.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(300.dp)
+                    .border(2.dp, Color.White),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Placeholder for Calendar View", color = Color.White)
+            }
+            Spacer(modifier = Modifier.height(32.dp))
+            CluelessButton(
+                onClick = { /* TODO: Implement planning logic */ },
+                text = stringResource(id = R.string.plan_outfit_button)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            // Show this message only if there are no outfits to plan
+            if (viewModel.clothingItems.count { it.category == "Top" } == 0 || viewModel.clothingItems.count { it.category == "Bottom" } == 0) {
+                 Text(
+                    text = stringResource(id = R.string.no_outfits_to_plan),
+                    style = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }
@@ -350,15 +403,61 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String
     var category by remember { mutableStateOf("Top") }
     var styles by remember { mutableStateOf("") }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
-    val photoPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? -> selectedImageUri = uri }
+    val context = LocalContext.current
+    val contentResolver = context.contentResolver
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri?.let {
+            try {
+                val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                contentResolver.takePersistableUriPermission(it, takeFlags)
+                selectedImageUri = it
+            } catch (e: SecurityException) {
+                e.printStackTrace()
+                Toast.makeText(context, "Failed to get permission for image.", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val permissionToRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        Manifest.permission.READ_MEDIA_IMAGES
+    } else {
+        Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            photoPickerLauncher.launch("image/*")
+        } else {
+            Toast.makeText(context, "Permission denied.", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
             Column(modifier = Modifier.padding(16.dp).width(300.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(stringResource(id = R.string.add_item_title), style = MaterialTheme.typography.headlineLarge.copy(color = Color.Black))
                 Spacer(modifier = Modifier.height(16.dp))
-                Box(modifier = Modifier.size(150.dp).background(Color.LightGray).clickable { photoPickerLauncher.launch("image/*") }, contentAlignment = Alignment.Center) {
-                    if (selectedImageUri == null) Text(stringResource(id = R.string.add_photo), style = MaterialTheme.typography.bodyLarge) else AsyncImage(model = selectedImageUri, contentDescription = "Selected image", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                Box(
+                    modifier = Modifier.size(150.dp).background(Color.LightGray).clickable {
+                        when (ContextCompat.checkSelfPermission(context, permissionToRequest)) {
+                            PackageManager.PERMISSION_GRANTED -> {
+                                photoPickerLauncher.launch("image/*")
+                            }
+                            else -> {
+                                permissionLauncher.launch(permissionToRequest)
+                            }
+                        }
+                    },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (selectedImageUri == null) {
+                        Text(stringResource(id = R.string.add_photo), style = MaterialTheme.typography.bodyLarge)
+                    } else {
+                        AsyncImage(model = selectedImageUri, contentDescription = "Selected image", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(stringResource(id = R.string.item_name_label), style = MaterialTheme.typography.labelSmall) })
@@ -378,7 +477,14 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String
 fun ClothingCard(item: ClothingItem) {
     Card(modifier = Modifier.border(2.dp, Color.Black)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            AsyncImage(model = item.imageUri, contentDescription = item.name, modifier = Modifier.height(120.dp).fillMaxWidth(), contentScale = ContentScale.Crop, error = painterResource(id = R.drawable.leopard_background), placeholder = painterResource(id = R.drawable.leopard_background))
+            AsyncImage(
+                model = item.imageUri,
+                contentDescription = item.name,
+                modifier = Modifier.height(120.dp).fillMaxWidth(),
+                contentScale = ContentScale.Crop,
+                error = painterResource(id = R.drawable.leopard_background),
+                placeholder = painterResource(id = R.drawable.leopard_background)
+            )
             Text(item.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(8.dp), textAlign = TextAlign.Center, maxLines = 1)
         }
     }
@@ -388,7 +494,11 @@ fun ClothingCard(item: ClothingItem) {
 fun OutfitDisplay(item: ClothingItem?, onPrev: () -> Unit, onNext: () -> Unit) {
     Box(modifier = Modifier.fillMaxWidth().height(150.dp).border(4.dp, Color(0xFF6A00A8)), contentAlignment = Alignment.Center) {
         if (item != null) {
-            if(item.imageUri != null) AsyncImage(model = item.imageUri, contentDescription = item.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop) else Text(item.name, style = MaterialTheme.typography.bodyLarge.copy(color = Color.White), textAlign = TextAlign.Center)
+            if (item.imageUri != null) {
+                AsyncImage(model = item.imageUri, contentDescription = item.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            } else {
+                Text(item.name, style = MaterialTheme.typography.bodyLarge.copy(color = Color.White), textAlign = TextAlign.Center)
+            }
         } else {
             Text(stringResource(id = R.string.no_items), style = MaterialTheme.typography.headlineLarge.copy(color = Color.White))
         }
@@ -409,7 +519,8 @@ fun CluelessButton(onClick: () -> Unit, text: String, enabled: Boolean = true) {
 @Composable
 fun ScreenTitle(title: String) {
     Text(
-        title, style = MaterialTheme.typography.headlineLarge,
+        title,
+        style = MaterialTheme.typography.headlineLarge,
         modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
         textAlign = TextAlign.Center
     )

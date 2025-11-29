@@ -28,7 +28,7 @@
     <string name="dress_me_title">Dress Me</string>
     <string name="match_button">MATCH</string>
     <string name="match_success">IT\'S A MATCH!</string>
-    <string name="match_fail">MISMATCH! (AS IF!)</string>
+    <string name="match_fail">MISMATCH!</string>
     <string name="no_items">No Items!</string>
 
     <!-- Assistant Hub Screen -->
@@ -58,5 +58,12 @@
     <string name="calendar_title">Outfit Calendar</string>
     <string name="plan_outfit_button">Plan outfit for day</string>
     <string name="no_outfits_to_plan">Create outfits in \'Dress Me\' to plan them!</string>
+    <string name="calendar_dialog_title">Outfit for %1$s</string>
+    <string name="calendar_dialog_no_outfit">No outfit planned. Plan one?</string>
+    <string name="select_top">Select Top</string>
+    <string name="select_bottom">Select Bottom</string>
+    <string name="plan_button">PLAN</string>
+    <string name="remove_button">REMOVE</string>
+    <string name="change_button">CHANGE</string>
 
 </resources>

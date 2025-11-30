@@ -72,7 +72,10 @@ class SharedViewModel : ViewModel() {
     val clothingItems = mutableStateListOf<ClothingItem>()
 
     var fontSizeMultiplier by mutableStateOf(1.0f)
-    var language by mutableStateOf("English")
+    var language by mutableStateOf("en")
+
+    // Almacenar outfits planeados: clave es la fecha (yyyy-MM-dd), valor es el outfit
+    val plannedOutfits = mutableStateMapOf<String, Outfit>()
 
     init {
         addDefaultClothingItems()
@@ -136,7 +139,7 @@ fun AppThemeWrapper(language: String, fontSizeMultiplier: Float, content: @Compo
     val context = LocalContext.current
 
     val localizedContext = remember(language, context) {
-        val locale = Locale(if (language == "English") "en" else "es")
+        val locale = Locale(language)
         val configuration = Configuration(context.resources.configuration).apply {
             setLocale(locale)
         }
@@ -279,36 +282,223 @@ fun AssistantScreen(navController: NavController) {
 
 @Composable
 fun CalendarScreen(viewModel: SharedViewModel) {
-    CluelessScreenContainer {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            ScreenTitle(stringResource(id = R.string.calendar_title))
-            Spacer(modifier = Modifier.height(32.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(300.dp)
-                    .border(2.dp, Color.White),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("Placeholder for Calendar View", color = Color.White)
+    var selectedDate by remember { mutableStateOf<String?>(null) }
+    var showOutfitDialog by remember { mutableStateOf(false) }
+
+    val tops = viewModel.clothingItems.filter { it.category == "Top" }
+    val bottoms = viewModel.clothingItems.filter { it.category == "Bottom" }
+
+    if (showOutfitDialog && selectedDate != null) {
+        OutfitPlanningDialog(
+            date = selectedDate!!,
+            tops = tops,
+            bottoms = bottoms,
+            currentOutfit = viewModel.plannedOutfits[selectedDate],
+            onDismiss = { showOutfitDialog = false },
+            onSaveOutfit = { top, bottom ->
+                viewModel.plannedOutfits[selectedDate!!] = Outfit(top, bottom)
+                showOutfitDialog = false
+            },
+            onRemoveOutfit = {
+                viewModel.plannedOutfits.remove(selectedDate!!)
+                showOutfitDialog = false
             }
-            Spacer(modifier = Modifier.height(32.dp))
-            CluelessButton(
-                onClick = { /* TODO: Implement planning logic */ },
-                text = stringResource(id = R.string.plan_outfit_button)
+        )
+    }
+
+    CluelessScreenContainer {
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            ScreenTitle(stringResource(id = R.string.calendar_title))
+
+            // Mostrar calendario simple con días
+            CalendarGrid(
+                plannedDates = viewModel.plannedOutfits.keys.toList(),
+                onDateSelected = { date ->
+                    selectedDate = date
+                    showOutfitDialog = true
+                }
             )
-            Spacer(modifier = Modifier.height(16.dp))
-            // Show this message only if there are no outfits to plan
-            if (viewModel.clothingItems.count { it.category == "Top" } == 0 || viewModel.clothingItems.count { it.category == "Bottom" } == 0) {
-                 Text(
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // Mostrar información del día seleccionado
+            if (selectedDate != null) {
+                Text("Selected: $selectedDate", style = MaterialTheme.typography.bodyLarge.copy(color = Color.White))
+                val plannedOutfit = viewModel.plannedOutfits[selectedDate]
+                if (plannedOutfit != null) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Planned Outfit:", style = MaterialTheme.typography.headlineLarge.copy(color = Color.White))
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Top:", style = MaterialTheme.typography.bodyLarge.copy(color = Color.White))
+                            Text(plannedOutfit.top.name, style = MaterialTheme.typography.bodyLarge.copy(color = Color.Cyan))
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Bottom:", style = MaterialTheme.typography.bodyLarge.copy(color = Color.White))
+                            Text(plannedOutfit.bottom.name, style = MaterialTheme.typography.bodyLarge.copy(color = Color.Cyan))
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            if (tops.isNotEmpty() && bottoms.isNotEmpty()) {
+                CluelessButton(
+                    onClick = {
+                        selectedDate = java.text.SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(java.util.Date())
+                        showOutfitDialog = true
+                    },
+                    text = stringResource(id = R.string.plan_outfit_button)
+                )
+            } else {
+                Text(
                     text = stringResource(id = R.string.no_outfits_to_plan),
                     style = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
                     textAlign = TextAlign.Center
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun CalendarGrid(plannedDates: List<String>, onDateSelected: (String) -> Unit) {
+    val today = java.text.SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(java.util.Date())
+    val calendar = java.util.Calendar.getInstance()
+    val daysInMonth = calendar.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+    val firstDayOfMonth = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.DAY_OF_MONTH, 1)
+    }.get(java.util.Calendar.DAY_OF_WEEK) - 1
+
+    Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+        // Días de la semana
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat").forEach { day ->
+                Text(day, style = MaterialTheme.typography.bodyLarge.copy(color = Color.White), modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+            }
+        }
+
+        // Días del mes
+        var dayCounter = 1
+        repeat(6) { week ->
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                repeat(7) { dayOfWeek ->
+                    val dayNumber = (week * 7 + dayOfWeek - firstDayOfMonth)
+
+                    if (dayNumber >= 0 && dayCounter <= daysInMonth) {
+                        val dateStr = String.format("%04d-%02d-%02d",
+                            calendar.get(java.util.Calendar.YEAR),
+                            calendar.get(java.util.Calendar.MONTH) + 1,
+                            dayCounter
+                        )
+                        val isPlanned = plannedDates.contains(dateStr)
+                        val isToday = dateStr == today
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(50.dp)
+                                .border(1.dp, Color.Gray)
+                                .background(
+                                    when {
+                                        isPlanned -> Color(0xFF6A00A8).copy(alpha = 0.7f)
+                                        isToday -> Color(0xFFFF69B4).copy(alpha = 0.5f)
+                                        else -> Color.Transparent
+                                    }
+                                )
+                                .clickable { onDateSelected(dateStr) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(dayCounter.toString(), style = MaterialTheme.typography.bodyLarge.copy(color = Color.White))
+                        }
+                        dayCounter++
+                    } else {
+                        Box(modifier = Modifier.weight(1f).height(50.dp).border(1.dp, Color.Gray))
+                    }
+                }
+            }
+            if (dayCounter > daysInMonth) return@repeat
+        }
+    }
+}
+
+@Composable
+fun OutfitPlanningDialog(
+    date: String,
+    tops: List<ClothingItem>,
+    bottoms: List<ClothingItem>,
+    currentOutfit: Outfit?,
+    onDismiss: () -> Unit,
+    onSaveOutfit: (ClothingItem, ClothingItem) -> Unit,
+    onRemoveOutfit: () -> Unit
+) {
+    var selectedTop by remember { mutableStateOf(currentOutfit?.top ?: tops.firstOrNull()) }
+    var selectedBottom by remember { mutableStateOf(currentOutfit?.bottom ?: bottoms.firstOrNull()) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(modifier = Modifier.padding(16.dp).width(300.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Plan Outfit for $date", style = MaterialTheme.typography.headlineLarge.copy(color = Color.Black))
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text("Select Top:", style = MaterialTheme.typography.bodyLarge.copy(color = Color.Black))
+                LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.heightIn(max = 150.dp)) {
+                    items(tops) { top ->
+                        Box(
+                            modifier = Modifier
+                                .padding(4.dp)
+                                .background(
+                                    if (selectedTop?.id == top.id) Color(0xFF6A00A8) else Color.LightGray
+                                )
+                                .clickable { selectedTop = top }
+                                .padding(8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(top.name, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text("Select Bottom:", style = MaterialTheme.typography.bodyLarge.copy(color = Color.Black))
+                LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.heightIn(max = 150.dp)) {
+                    items(bottoms) { bottom ->
+                        Box(
+                            modifier = Modifier
+                                .padding(4.dp)
+                                .background(
+                                    if (selectedBottom?.id == bottom.id) Color(0xFF6A00A8) else Color.LightGray
+                                )
+                                .clickable { selectedBottom = bottom }
+                                .padding(8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(bottom.name, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (currentOutfit != null) {
+                        CluelessButton(onClick = onRemoveOutfit, text = "Remove")
+                    }
+                    CluelessButton(
+                        onClick = {
+                            if (selectedTop != null && selectedBottom != null) {
+                                onSaveOutfit(selectedTop!!, selectedBottom!!)
+                            }
+                        },
+                        text = "Save"
+                    )
+                }
             }
         }
     }
@@ -382,9 +572,9 @@ fun ProfileScreen() {
 
             Text(stringResource(id = R.string.profile_language), style = MaterialTheme.typography.bodyLarge.copy(color = Color.White))
             Row {
-                CluelessButton(onClick = { viewModel.language = "English" }, text = "English", enabled = viewModel.language != "English")
+                CluelessButton(onClick = { viewModel.language = "en" }, text = "English", enabled = viewModel.language != "en")
                 Spacer(modifier = Modifier.width(16.dp))
-                CluelessButton(onClick = { viewModel.language = "Español" }, text = "Español", enabled = viewModel.language != "Español")
+                CluelessButton(onClick = { viewModel.language = "es" }, text = "Español", enabled = viewModel.language != "es")
             }
             Spacer(modifier = Modifier.height(32.dp))
             Text(stringResource(id = R.string.profile_font_size), style = MaterialTheme.typography.bodyLarge.copy(color = Color.White))
@@ -406,15 +596,19 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String
     val context = LocalContext.current
     val contentResolver = context.contentResolver
 
-    val photoPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+    // Use OpenDocument for persistent URI access
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
         uri?.let {
             try {
                 val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
                 contentResolver.takePersistableUriPermission(it, takeFlags)
                 selectedImageUri = it
+                Toast.makeText(context, "Image selected!", Toast.LENGTH_SHORT).show()
             } catch (e: SecurityException) {
                 e.printStackTrace()
-                Toast.makeText(context, "Failed to get permission for image.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Failed to persist image permission.", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -429,7 +623,8 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         if (isGranted) {
-            photoPickerLauncher.launch("image/*")
+            // Pass correct MIME type to the launcher
+            photoPickerLauncher.launch(arrayOf("image/*"))
         } else {
             Toast.makeText(context, "Permission denied.", Toast.LENGTH_SHORT).show()
         }
@@ -444,7 +639,7 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String
                     modifier = Modifier.size(150.dp).background(Color.LightGray).clickable {
                         when (ContextCompat.checkSelfPermission(context, permissionToRequest)) {
                             PackageManager.PERMISSION_GRANTED -> {
-                                photoPickerLauncher.launch("image/*")
+                                photoPickerLauncher.launch(arrayOf("image/*"))
                             }
                             else -> {
                                 permissionLauncher.launch(permissionToRequest)
@@ -472,6 +667,7 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String
         }
     }
 }
+
 
 @Composable
 fun ClothingCard(item: ClothingItem) {

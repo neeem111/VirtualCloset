@@ -117,8 +117,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             val viewModel: SharedViewModel = viewModel()
-            val language = viewModel.language
-            val fontSizeMultiplier = viewModel.fontSizeMultiplier
+
+            // Observar cambios en el modelo de vista
+            val language by derivedStateOf { viewModel.language }
+            val fontSizeMultiplier by derivedStateOf { viewModel.fontSizeMultiplier }
 
             // This wrapper Composable will react to state changes and update the theme and context
             AppThemeWrapper(language = language, fontSizeMultiplier = fontSizeMultiplier) {
@@ -126,7 +128,7 @@ class MainActivity : ComponentActivity() {
                     val navController = rememberNavController()
                     NavHost(navController = navController, startDestination = Screen.Welcome.route) {
                         composable(Screen.Welcome.route) { WelcomeScreen { navController.navigate(Screen.Main.route) { popUpTo(Screen.Welcome.route) { inclusive = true } } } }
-                        composable(Screen.Main.route) { MainScreen() }
+                        composable(Screen.Main.route) { MainScreen(viewModel) }
                     }
                 }
             }
@@ -188,11 +190,11 @@ fun WelcomeScreen(onContinueClicked: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen() {
+fun MainScreen(sharedViewModel: SharedViewModel) {
     val navController = rememberNavController()
     Scaffold(bottomBar = { BottomNavigationBar(navController = navController) }) {
         Box(modifier = Modifier.padding(it)) {
-            MainAppNavGraph(navController = navController, viewModel = viewModel())
+            MainAppNavGraph(navController = navController, viewModel = sharedViewModel)
         }
     }
 }
@@ -205,7 +207,7 @@ fun MainAppNavGraph(navController: NavHostController, viewModel: SharedViewModel
         composable(Screen.Assistant.route) { AssistantScreen(navController) }
         composable(Screen.StyleTest.route) { StyleTestScreen(viewModel = viewModel, onTestComplete = { navController.navigate(Screen.StyleTestResult.route) }) }
         composable(Screen.StyleTestResult.route) { StyleTestResultScreen(outfit = viewModel.testResult) }
-        composable(Screen.Profile.route) { ProfileScreen() }
+        composable(Screen.Profile.route) { ProfileScreen(viewModel) }
         composable(Screen.Calendar.route) { CalendarScreen(viewModel) }
     }
 }
@@ -442,16 +444,29 @@ fun OutfitPlanningDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-            Column(modifier = Modifier.padding(16.dp).width(300.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .width(300.dp)
+                    .heightIn(max = 500.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Text("Plan Outfit for $date", style = MaterialTheme.typography.headlineLarge.copy(color = Color.Black))
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text("Select Top:", style = MaterialTheme.typography.bodyLarge.copy(color = Color.Black))
-                LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.heightIn(max = 150.dp)) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 120.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     items(tops) { top ->
                         Box(
                             modifier = Modifier
-                                .padding(4.dp)
+                                .height(50.dp)
                                 .background(
                                     if (selectedTop?.id == top.id) Color(0xFF6A00A8) else Color.LightGray
                                 )
@@ -459,7 +474,7 @@ fun OutfitPlanningDialog(
                                 .padding(8.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(top.name, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                            Text(top.name, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center, maxLines = 2)
                         }
                     }
                 }
@@ -467,11 +482,18 @@ fun OutfitPlanningDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Text("Select Bottom:", style = MaterialTheme.typography.bodyLarge.copy(color = Color.Black))
-                LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.heightIn(max = 150.dp)) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 120.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     items(bottoms) { bottom ->
                         Box(
                             modifier = Modifier
-                                .padding(4.dp)
+                                .height(50.dp)
                                 .background(
                                     if (selectedBottom?.id == bottom.id) Color(0xFF6A00A8) else Color.LightGray
                                 )
@@ -479,7 +501,7 @@ fun OutfitPlanningDialog(
                                 .padding(8.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(bottom.name, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                            Text(bottom.name, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center, maxLines = 2)
                         }
                     }
                 }
@@ -558,8 +580,7 @@ fun StyleTestResultScreen(outfit: Outfit?) {
 }
 
 @Composable
-fun ProfileScreen() {
-    val viewModel: SharedViewModel = viewModel()
+fun ProfileScreen(viewModel: SharedViewModel) {
     var username by remember { mutableStateOf("Cher") }
 
     CluelessScreenContainer {
@@ -606,9 +627,10 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String
                 contentResolver.takePersistableUriPermission(it, takeFlags)
                 selectedImageUri = it
                 Toast.makeText(context, "Image selected!", Toast.LENGTH_SHORT).show()
-            } catch (e: SecurityException) {
-                e.printStackTrace()
-                Toast.makeText(context, "Failed to persist image permission.", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                // Si falla la persistencia, almacenar el URI de todas formas
+                selectedImageUri = it
+                Toast.makeText(context, "Image selected!", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -767,7 +789,12 @@ fun WelcomeScreenPreview() { VirtualClosetTheme { WelcomeScreen {} } }
 
 @Preview(showBackground = true)
 @Composable
-fun ProfileScreenPreview() { VirtualClosetTheme { ProfileScreen() } }
+fun ProfileScreenPreview() {
+    VirtualClosetTheme {
+        val previewViewModel = SharedViewModel()
+        ProfileScreen(previewViewModel)
+    }
+}
 
 @Preview(showBackground = true)
 @Composable

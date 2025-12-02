@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.activity.viewModels
 import androidx.lifecycle.ViewModel
@@ -109,10 +110,10 @@ class SharedViewModel : ViewModel() {
     }
 
     private fun addDefaultClothingItems() {
-        // Use placeholder images that exist in project resources
+        // Use actual drawable resources instead of leopard background
         val packageName = "com.example.virtualcloset"
-        clothingItems.add(ClothingItem(0, "Default White Top", "Top", "android.resource://$packageName/${R.drawable.leopard_background}", listOf("Casual", "Minimalist")))
-        clothingItems.add(ClothingItem(1, "Default Jeans", "Bottom", "android.resource://$packageName/${R.drawable.leopard_background}", listOf("Casual")))
+        clothingItems.add(ClothingItem(0, "Default White Top", "Top", "android.resource://$packageName/${R.drawable.default_white_top}", listOf("Casual", "Minimalist")))
+        clothingItems.add(ClothingItem(1, "Default Jeans", "Bottom", "android.resource://$packageName/${R.drawable.default_jeans}", listOf("Casual")))
     }
 
     // Questions expanded to include temperature, occasion, location, mood, activities, color prefs
@@ -294,7 +295,7 @@ class MainActivity : ComponentActivity() {
                         }
 
                         // Assistant floating bubble overlay
-                        AssistantBubble(navController = navController, viewModel = viewModel, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp))
+                        AssistantBubble(navController = navController, viewModel = viewModel, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp))
                     }
                 }
             }
@@ -890,7 +891,7 @@ fun ClothingCard(item: ClothingItem) {
 
 @Composable
 fun OutfitDisplay(item: ClothingItem?, onPrev: () -> Unit, onNext: () -> Unit) {
-    Box(modifier = Modifier.fillMaxWidth().height(150.dp).border(4.dp, Color(0xFF6A00A8)), contentAlignment = Alignment.Center) {
+    Box(modifier = Modifier.fillMaxWidth().height(250.dp).border(4.dp, Color(0xFF6A00A8)), contentAlignment = Alignment.Center) {
         if (item != null) {
             if (item.imageUri != null) {
                 AsyncImage(model = item.imageUri, contentDescription = item.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -900,9 +901,13 @@ fun OutfitDisplay(item: ClothingItem?, onPrev: () -> Unit, onNext: () -> Unit) {
         } else {
             Text(stringResource(id = R.string.no_items), style = MaterialTheme.typography.headlineLarge.copy(color = Color.White))
         }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onPrev) { Icon(Icons.Default.KeyboardArrowLeft, "Previous", tint = Color.White, modifier = Modifier.size(48.dp)) }
-            IconButton(onClick = onNext) { Icon(Icons.Default.KeyboardArrowRight, "Next", tint = Color.White, modifier = Modifier.size(48.dp)) }
+        Row(modifier = Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            FloatingActionButton(onClick = onPrev, modifier = Modifier.size(56.dp), containerColor = Color(0xFF6A00A8)) {
+                Icon(Icons.Default.KeyboardArrowLeft, "Previous", tint = Color.White, modifier = Modifier.size(56.dp))
+            }
+            FloatingActionButton(onClick = onNext, modifier = Modifier.size(56.dp), containerColor = Color(0xFF6A00A8)) {
+                Icon(Icons.Default.KeyboardArrowRight, "Next", tint = Color.White, modifier = Modifier.size(56.dp))
+            }
         }
     }
 }
@@ -1007,23 +1012,68 @@ fun StyleTestResultScreen(viewModel: SharedViewModel) {
     var outfitRecommendation by remember { mutableStateOf<com.example.virtualcloset.logic.OutfitRecommendation?>(null) }
 
     LaunchedEffect(Unit) {
-        // Simulate loading and generate outfit
-        delay(1500)
-        outfitRecommendation = com.example.virtualcloset.logic.OutfitGenerator.generateOutfit(viewModel.answers)
-        isLoading = false
+        try {
+            // Simulate loading and generate outfit
+            delay(2000)
+            outfitRecommendation = com.example.virtualcloset.logic.OutfitGenerator.generateOutfit(viewModel.answers)
+            isLoading = false
+        } catch (e: Exception) {
+            e.printStackTrace()
+            isLoading = false
+        }
     }
 
     if (isLoading) {
-        com.example.virtualcloset.ui.components.LoadingScreen("Finding your perfect look...")
+        LoadingScreenWithGlitter()
     } else {
         StyleTestResultContent(
             recommendation = outfitRecommendation,
-            onSave = {
-                if (outfitRecommendation != null) {
-                    // Save as suggested outfit
-                }
-            }
+            onSave = {}
         )
+    }
+}
+
+// Pantalla de carga con efecto glitter
+@Composable
+fun LoadingScreenWithGlitter() {
+    Box(modifier = Modifier
+        .fillMaxSize()
+        .background(Color.Black)) {
+
+        val infiniteTransition = rememberInfiniteTransition("loading-glitter")
+        val glitterAlpha by infiniteTransition.animateFloat(
+            initialValue = 0.3f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1000),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "glitter"
+        )
+
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                "✨",
+                style = MaterialTheme.typography.displayLarge.copy(fontSize = 80.sp),
+                modifier = Modifier.alpha(glitterAlpha)
+
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            CircularProgressIndicator(
+                color = Color(0xFFFF69B4).copy(alpha = glitterAlpha),
+                modifier = Modifier.size(64.dp)
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            Text(
+                "Finding your perfect outfit...",
+                color = Color.White,
+                style = MaterialTheme.typography.bodyLarge
+            )
+        }
     }
 }
 
@@ -1114,56 +1164,49 @@ fun AssistantBubble(navController: NavController, viewModel: SharedViewModel, mo
 
 @Composable
 fun AssistantDialog(onDismiss: () -> Unit, navController: NavController, viewModel: SharedViewModel) {
+    var selectedPersonality by remember { mutableStateOf(viewModel.assistantPersonality) }
+
     Dialog(onDismissRequest = onDismiss) {
         Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-            Column(modifier = Modifier.padding(16.dp).width(320.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Assistant", style = MaterialTheme.typography.headlineSmall)
-                Spacer(modifier = Modifier.height(8.dp))
-                // Personality selection
-                Text("Personality:", style = MaterialTheme.typography.bodyLarge)
-                Spacer(modifier = Modifier.height(8.dp))
-                AssistantPersonalityRow(viewModel = viewModel)
+            Column(modifier = Modifier.padding(16.dp).width(280.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Choose Personality", style = MaterialTheme.typography.headlineSmall)
                 Spacer(modifier = Modifier.height(12.dp))
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = {
-                        // Run style test
-                        navController.navigate(Screen.StyleTest.route)
-                        onDismiss()
-                    }) { Text("Run Outfit Test") }
-                    Button(onClick = {
-                        // Suggest matches: trigger recommendation and go to result
-                        viewModel.getRecommendation()
-                        navController.navigate(Screen.StyleTestResult.route)
-                        onDismiss()
-                    }) { Text("Suggest Match") }
+                listOf(
+                    SharedViewModel.AssistantPersonality.CuteCat to "Cute Cat 🐱",
+                    SharedViewModel.AssistantPersonality.FashionGuru to "Fashion Guru ✨",
+                    SharedViewModel.AssistantPersonality.MinimalistZen to "Zen Master 🧘",
+                    SharedViewModel.AssistantPersonality.ChaoticGoblin to "Chaotic Goblin 👹"
+                ).forEach { (personality, label) ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                selectedPersonality = personality
+                                viewModel.assistantPersonality = personality
+                            }
+                            .padding(8.dp)
+                    ) {
+                        RadioButton(selected = selectedPersonality == personality, onClick = null)
+                        Text(label, modifier = Modifier.padding(start = 8.dp))
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-                Button(onClick = onDismiss) { Text("Close") }
-            }
-        }
-    }
-}
+                Spacer(modifier = Modifier.height(16.dp))
 
-@Composable
-fun AssistantPersonalityRow(viewModel: SharedViewModel) {
-    Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            RadioButton(selected = viewModel.assistantPersonality == SharedViewModel.AssistantPersonality.CuteCat, onClick = { viewModel.assistantPersonality = SharedViewModel.AssistantPersonality.CuteCat })
-            Text("Cute Cat (sassy)")
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            RadioButton(selected = viewModel.assistantPersonality == SharedViewModel.AssistantPersonality.FashionGuru, onClick = { viewModel.assistantPersonality = SharedViewModel.AssistantPersonality.FashionGuru })
-            Text("Fashion Guru")
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            RadioButton(selected = viewModel.assistantPersonality == SharedViewModel.AssistantPersonality.MinimalistZen, onClick = { viewModel.assistantPersonality = SharedViewModel.AssistantPersonality.MinimalistZen })
-            Text("Minimalist Zen")
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            RadioButton(selected = viewModel.assistantPersonality == SharedViewModel.AssistantPersonality.ChaoticGoblin, onClick = { viewModel.assistantPersonality = SharedViewModel.AssistantPersonality.ChaoticGoblin })
-            Text("Chaotic Goblin")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = {
+                        onDismiss()
+                        navController.navigate(Screen.StyleTest.route)
+                    }, modifier = Modifier.weight(1f)) {
+                        Text("Test")
+                    }
+                    Button(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                        Text("Close")
+                    }
+                }
+            }
         }
     }
 }

@@ -3,7 +3,6 @@ package com.example.virtualcloset
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -37,25 +36,26 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.activity.viewModels
+import androidx.lifecycle.ViewModel
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavController
-import androidx.navigation.NavHostController
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
 import coil.compose.AsyncImage
 import com.example.virtualcloset.ui.theme.AppTypography
 import com.example.virtualcloset.ui.theme.CluelessFont
 import com.example.virtualcloset.ui.theme.VirtualClosetTheme
 import java.util.Locale
 import kotlin.random.Random
+import androidx.navigation.NavController
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
 
+// Data models used by the app (kept lightweight for MVP)
 data class ClothingItem(
     val id: Int,
     val name: String,
@@ -65,7 +65,16 @@ data class ClothingItem(
 )
 
 data class Question(val text: String, val options: List<String>)
+
 data class Outfit(val top: ClothingItem, val bottom: ClothingItem)
+
+// SuggestedOutfit supports multiple pieces (for recommendation results)
+data class SuggestedOutfit(val pieces: List<ClothingItem>, val mappedToWardrobe: Map<Int, Int?> = emptyMap())
+
+// Predefined piece used to seed suggested outfits
+data class PredefinedPiece(val name: String, val category: String, val styles: List<String> = emptyList(), val imageRes: Int? = null)
+
+data class PredefinedOutfit(val id: Int, val title: String, val pieces: List<PredefinedPiece>, val styles: List<String> = emptyList(), val colors: List<String> = emptyList())
 
 class SharedViewModel : ViewModel() {
     private var nextId = 100
@@ -74,61 +83,212 @@ class SharedViewModel : ViewModel() {
     var fontSizeMultiplier by mutableStateOf(1.0f)
     var language by mutableStateOf("en")
 
-    // Almacenar outfits planeados: clave es la fecha (yyyy-MM-dd), valor es el outfit
+    // Almacenar outfits planeados: clave es la fecha (yyyy-MM-dd), valor es el outfit (simple)
     val plannedOutfits = mutableStateMapOf<String, Outfit>()
 
+    // Saved suggested outfits in-memory (MVP). Later persist with Room.
+    val savedSuggestedOutfits = mutableStateListOf<SuggestedOutfit>()
+
     init {
-        addDefaultClothingItems()
+        try {
+            addDefaultClothingItems()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        try {
+            addPredefinedOutfits()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun addDefaultClothingItems() {
+        // Use placeholder images that exist in project resources
         val packageName = "com.example.virtualcloset"
-        clothingItems.add(ClothingItem(0, "Default White Top", "Top", "android.resource://$packageName/${R.drawable.default_white_top}", listOf("Casual", "Minimalist")))
-        clothingItems.add(ClothingItem(1, "Default Jeans", "Bottom", "android.resource://$packageName/${R.drawable.default_jeans}", listOf("Casual")))
+        clothingItems.add(ClothingItem(0, "Default White Top", "Top", "android.resource://$packageName/${R.drawable.leopard_background}", listOf("Casual", "Minimalist")))
+        clothingItems.add(ClothingItem(1, "Default Jeans", "Bottom", "android.resource://$packageName/${R.drawable.leopard_background}", listOf("Casual")))
     }
 
+    // Questions expanded to include temperature, occasion, location, mood, activities, color prefs
     val questions = listOf(
-        Question("How would you describe your everyday style?", listOf("Casual", "Sporty", "Elegant", "Trendy", "Minimalist", "I'm not sure")),
-        Question("Which colors do you prefer?", listOf("Neutrals", "Warm colors", "Cool colors", "Bright colors")),
-        Question("What's your main intention for today?", listOf("Look good", "Feel comfortable", "Try something new")),
+        Question("What's the temperature like today?", listOf("Cold (<10°C)", "Cool (10-18°C)", "Mild (18-24°C)", "Warm (>24°C)")),
+        Question("What's the occasion?", listOf("Casual day", "Work/Office", "Party/Evening", "Outdoor/Active", "Date/Going out")),
+        Question("Where will you spend most of your time?", listOf("Indoor", "Outdoor", "Mixed")),
+        Question("How are you feeling (mood)?", listOf("Cozy", "Bold", "Relaxed", "Playful", "Professional")),
+        Question("Any activities planned?", listOf("Walking/Commuting", "Exercise", "Meeting friends", "Formal meeting", "Relaxing at home")),
+        Question("Which colors do you prefer today?", listOf("Neutrals", "Warm colors", "Cool colors", "Bright / Statement"))
     )
+
     val answers = mutableStateMapOf<Int, String>()
-    var testResult by mutableStateOf<Outfit?>(null)
+
+    // Holds the recommended detailed outfit (multi-piece)
+    var testSuggestedOutfit by mutableStateOf<SuggestedOutfit?>(null)
+
+    // Predefined outfits (4 requested looks)
+    private val predefinedOutfits = mutableStateListOf<PredefinedOutfit>()
+
+    private fun addPredefinedOutfits() {
+        // Using placeholder images where possible (fall back to leopard_background)
+        predefinedOutfits.add(
+            PredefinedOutfit(
+                id = 0,
+                title = "Cozy Mini Skirt",
+                pieces = listOf(
+                    PredefinedPiece("High Boots", "Shoes", listOf("Comfy", "Street"), R.drawable.leopard_background),
+                    PredefinedPiece("Leg Warmers", "Accessory", listOf("Cozy"), R.drawable.leopard_background),
+                    PredefinedPiece("Mini Skirt", "Bottom", listOf("Trendy"), R.drawable.leopard_background),
+                    PredefinedPiece("Cozy Sweater", "Top", listOf("Cozy"), R.drawable.leopard_background)
+                ),
+                styles = listOf("Cozy", "Trendy"),
+                colors = listOf("Warm colors", "Neutrals")
+            )
+        )
+
+        predefinedOutfits.add(
+            PredefinedOutfit(
+                id = 1,
+                title = "Oversized Hoodie Look",
+                pieces = listOf(
+                    PredefinedPiece("Oversized Hoodie", "Top", listOf("Casual", "Comfy"), R.drawable.leopard_background),
+                    PredefinedPiece("Straight-leg Jeans", "Bottom", listOf("Casual"), R.drawable.leopard_background),
+                    PredefinedPiece("Sneakers", "Shoes", listOf("Sporty"), R.drawable.leopard_background)
+                ),
+                styles = listOf("Casual", "Sporty"),
+                colors = listOf("Neutrals", "Cool colors")
+            )
+        )
+
+        predefinedOutfits.add(
+            PredefinedOutfit(
+                id = 2,
+                title = "Long Dress Cozy",
+                pieces = listOf(
+                    PredefinedPiece("Long Dress", "OnePiece", listOf("Elegant", "Comfy"), R.drawable.leopard_background),
+                    PredefinedPiece("Cardigan", "Outer", listOf("Cozy"), R.drawable.leopard_background),
+                    PredefinedPiece("Ankle Boots", "Shoes", listOf("Elegant"), R.drawable.leopard_background)
+                ),
+                styles = listOf("Elegant", "Comfy"),
+                colors = listOf("Neutrals", "Warm colors")
+            )
+        )
+
+        predefinedOutfits.add(
+            PredefinedOutfit(
+                id = 3,
+                title = "Cargo & Crop",
+                pieces = listOf(
+                    PredefinedPiece("Cargo Pants", "Bottom", listOf("Street", "Casual"), R.drawable.leopard_background),
+                    PredefinedPiece("Crop Top", "Top", listOf("Trendy"), R.drawable.leopard_background),
+                    PredefinedPiece("Bomber Jacket", "Outer", listOf("Street"), R.drawable.leopard_background)
+                ),
+                styles = listOf("Street", "Trendy"),
+                colors = listOf("Cool colors", "Neutrals")
+            )
+        )
+    }
 
     fun addClothingItem(name: String, category: String, styles: List<String>, imageUri: String?) {
         clothingItems.add(ClothingItem(id = nextId++, name = name, category = category, styles = styles, imageUri = imageUri))
     }
 
-    fun getRecommendation(): Outfit? {
+    // Heurística simple: puntuar cada predefined outfit contra las respuestas y elegir la mejor
+    fun getRecommendation(): SuggestedOutfit? {
         if (answers.isEmpty()) return null
-        val styleAnswer = answers[0]
-        val tops = clothingItems.filter { it.category == "Top" }
-        val bottoms = clothingItems.filter { it.category == "Bottom" }
-        if (tops.isEmpty() || bottoms.isEmpty()) return null
-        val top = tops.find { it.styles.any { s -> s.equals(styleAnswer, ignoreCase = true) } } ?: tops.random()
-        val bottom = bottoms.find { it.styles.any { s -> s.equals(styleAnswer, ignoreCase = true) } } ?: bottoms.random()
-        testResult = Outfit(top, bottom)
-        return testResult
+
+        // Score each predefined outfit
+        val scores = predefinedOutfits.map { outfit ->
+            var score = 0
+            // Match style/mood keywords
+            val moodAnswer = answers[3] ?: ""
+            if (outfit.styles.any { s -> moodAnswer.contains(s, ignoreCase = true) }) score += 3
+
+            // Match color preferences
+            val colorAnswer = answers[5] ?: ""
+            if (outfit.colors.any { c -> colorAnswer.contains(c.split(" ").firstOrNull() ?: "", ignoreCase = true) }) score += 2
+
+            // Match occasion
+            val occasion = answers[1] ?: ""
+            if (occasion.contains("Work", ignoreCase = true) && outfit.styles.any { it.equals("Elegant", ignoreCase = true) }) score += 2
+            if (occasion.contains("Casual", ignoreCase = true) && outfit.styles.any { it.equals("Casual", ignoreCase = true) }) score += 2
+
+            Pair(outfit, score)
+        }
+
+        val best = scores.maxByOrNull { it.second }?.first ?: predefinedOutfits.random()
+
+        // Map to user's items when possible
+        val mapped: MutableMap<Int, Int?> = mutableMapOf() // index -> clothingItems index or null
+        val resultPieces = best.pieces.mapIndexed { idx, piece ->
+            // Find a clothingItem in user's closet that matches category and has any overlapping style
+            val found = clothingItems.indexOfFirst { userItem ->
+                userItem.category.equals(piece.category, ignoreCase = true) || userItem.styles.any { s -> piece.styles.any { ps -> ps.equals(s, ignoreCase = true) } }
+            }
+            if (found >= 0) mapped[idx] = found else mapped[idx] = null
+
+            if (found >= 0) {
+                // Return the user's item instance
+                clothingItems[found]
+            } else {
+                // Create a placeholder ClothingItem for the suggested piece
+                ClothingItem(id = -1 - idx, name = piece.name, category = piece.category, imageUri = null, styles = piece.styles)
+            }
+        }
+
+        val suggested = SuggestedOutfit(pieces = resultPieces, mappedToWardrobe = mapped)
+        testSuggestedOutfit = suggested
+        return suggested
     }
+
+    // Save suggested outfit to in-memory saved list and (optionally) into plannedOutfits for today
+    fun saveSuggestedOutfit(suggested: SuggestedOutfit) {
+        savedSuggestedOutfits.add(suggested)
+        // also save a simple top+bottom to plannedOutfits (for calendar compatibility)
+        val today = java.text.SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(java.util.Date())
+        val top = suggested.pieces.firstOrNull { it.category.equals("Top", ignoreCase = true) || it.category.equals("OnePiece", ignoreCase = true) }
+        val bottom = suggested.pieces.firstOrNull { it.category.equals("Bottom", ignoreCase = true) }
+        if (top != null && bottom != null) {
+            plannedOutfits[today] = Outfit(top = top, bottom = bottom)
+        } else if (top != null) {
+            plannedOutfits[today] = Outfit(top = top, bottom = ClothingItem(-999, "Default Bottom", "Bottom"))
+        }
+    }
+
+    var testResult by mutableStateOf<Outfit?>(null)
+
+    // Assistant state
+    enum class AssistantPersonality { CuteCat, FashionGuru, MinimalistZen, ChaoticGoblin }
+    var assistantPersonality by mutableStateOf(AssistantPersonality.FashionGuru)
+    var assistantAvatarUri by mutableStateOf<String?>(null)
+
+    // Use direct property assignment for assistantPersonality (avoid JVM signature clashes)
+    // fun setAssistantPersonality(p: AssistantPersonality) { assistantPersonality = p }
+    fun setAssistantAvatar(uri: String?) { assistantAvatarUri = uri }
 }
 
 class MainActivity : ComponentActivity() {
+    private val sharedViewModel: SharedViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            val viewModel: SharedViewModel = viewModel()
+            val viewModel = sharedViewModel
 
             // Observar cambios en el modelo de vista
-            val language by derivedStateOf { viewModel.language }
-            val fontSizeMultiplier by derivedStateOf { viewModel.fontSizeMultiplier }
+            val language by remember { derivedStateOf { viewModel.language } }
+            val fontSizeMultiplier by remember { derivedStateOf { viewModel.fontSizeMultiplier } }
 
             // This wrapper Composable will react to state changes and update the theme and context
             AppThemeWrapper(language = language, fontSizeMultiplier = fontSizeMultiplier) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val navController = rememberNavController()
-                    NavHost(navController = navController, startDestination = Screen.Welcome.route) {
-                        composable(Screen.Welcome.route) { WelcomeScreen { navController.navigate(Screen.Main.route) { popUpTo(Screen.Welcome.route) { inclusive = true } } } }
-                        composable(Screen.Main.route) { MainScreen(viewModel) }
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        NavHost(navController = navController, startDestination = Screen.Welcome.route) {
+                            composable(Screen.Welcome.route) { WelcomeScreen { navController.navigate(Screen.Main.route) { popUpTo(Screen.Welcome.route) { inclusive = true } } } }
+                            composable(Screen.Main.route) { MainScreen(viewModel) }
+                        }
+
+                        // Assistant floating bubble overlay
+                        AssistantBubble(navController = navController, viewModel = viewModel, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp))
                     }
                 }
             }
@@ -138,16 +298,6 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppThemeWrapper(language: String, fontSizeMultiplier: Float, content: @Composable () -> Unit) {
-    val context = LocalContext.current
-
-    val localizedContext = remember(language, context) {
-        val locale = Locale(language)
-        val configuration = Configuration(context.resources.configuration).apply {
-            setLocale(locale)
-        }
-        context.createConfigurationContext(configuration)
-    }
-
     val dynamicTypography = remember(fontSizeMultiplier) {
         AppTypography.copy(
             displayLarge = AppTypography.displayLarge.copy(fontSize = AppTypography.displayLarge.fontSize * fontSizeMultiplier),
@@ -157,10 +307,8 @@ fun AppThemeWrapper(language: String, fontSizeMultiplier: Float, content: @Compo
         )
     }
 
-    CompositionLocalProvider(LocalContext provides localizedContext) {
-        VirtualClosetTheme(typography = dynamicTypography) {
-            content()
-        }
+    VirtualClosetTheme(typography = dynamicTypography) {
+        content()
     }
 }
 
@@ -173,17 +321,17 @@ fun WelcomeScreen(onContinueClicked: () -> Unit) {
         label = "glowAlpha"
     )
 
-    CluelessScreenContainer(overlayAlpha = 0.5f) {
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center, modifier = Modifier.fillMaxSize()) {
             Text(
-                stringResource(id = R.string.welcome_title),
+                "Virtual Closet",
                 style = MaterialTheme.typography.displayLarge.copy(
                     textAlign = TextAlign.Center,
                     shadow = Shadow(color = Color(0xFFFF69B4).copy(alpha = glowAlpha), blurRadius = 30f)
                 )
             )
             Spacer(modifier = Modifier.height(200.dp))
-            CluelessButton(onClick = onContinueClicked, text = stringResource(id = R.string.welcome_button))
+            CluelessButton(onClick = onContinueClicked, text = "ENTER")
         }
     }
 }
@@ -205,8 +353,12 @@ fun MainAppNavGraph(navController: NavHostController, viewModel: SharedViewModel
         composable(Screen.MyCloset.route) { MyClosetScreen(viewModel) }
         composable(Screen.DressMe.route) { DressMeScreen(viewModel) }
         composable(Screen.Assistant.route) { AssistantScreen(navController) }
-        composable(Screen.StyleTest.route) { StyleTestScreen(viewModel = viewModel, onTestComplete = { navController.navigate(Screen.StyleTestResult.route) }) }
-        composable(Screen.StyleTestResult.route) { StyleTestResultScreen(outfit = viewModel.testResult) }
+        composable(Screen.StyleTest.route) { StyleTestScreen(viewModel = viewModel, onTestComplete = {
+            // generate recommendation and navigate to result
+            viewModel.getRecommendation()
+            navController.navigate(Screen.StyleTestResult.route)
+        }) }
+        composable(Screen.StyleTestResult.route) { StyleTestResultScreen(viewModel = viewModel) }
         composable(Screen.Profile.route) { ProfileScreen(viewModel) }
         composable(Screen.Calendar.route) { CalendarScreen(viewModel) }
     }
@@ -393,7 +545,7 @@ fun CalendarGrid(plannedDates: List<String>, onDateSelected: (String) -> Unit) {
                     val dayNumber = (week * 7 + dayOfWeek - firstDayOfMonth)
 
                     if (dayNumber >= 0 && dayCounter <= daysInMonth) {
-                        val dateStr = String.format("%04d-%02d-%02d",
+                        val dateStr = String.format(Locale.getDefault(), "%04d-%02d-%02d",
                             calendar.get(java.util.Calendar.YEAR),
                             calendar.get(java.util.Calendar.MONTH) + 1,
                             dayCounter
@@ -527,59 +679,6 @@ fun OutfitPlanningDialog(
 }
 
 @Composable
-fun StyleTestScreen(viewModel: SharedViewModel, onTestComplete: () -> Unit) {
-    var currentQuestionIndex by remember { mutableStateOf(0) }
-    val currentQuestion = viewModel.questions[currentQuestionIndex]
-    var selectedOption by remember { mutableStateOf(viewModel.answers[currentQuestionIndex]) }
-
-    CluelessScreenContainer {
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            ScreenTitle(stringResource(id = R.string.style_test_title))
-            Text(currentQuestion.text, style = MaterialTheme.typography.bodyLarge.copy(color = Color.White, textAlign = TextAlign.Center), modifier = Modifier.padding(horizontal = 16.dp))
-            Spacer(modifier = Modifier.height(16.dp))
-            currentQuestion.options.forEach { option ->
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp).clickable { selectedOption = option }) {
-                    RadioButton(selected = selectedOption == option, onClick = { selectedOption = option }, colors = RadioButtonDefaults.colors(selectedColor = Color.White, unselectedColor = Color.White))
-                    Text(option, style = MaterialTheme.typography.bodyLarge.copy(color = Color.White))
-                }
-            }
-            Spacer(modifier = Modifier.weight(1f))
-            Row {
-                if (currentQuestionIndex > 0) CluelessButton(onClick = { currentQuestionIndex-- }, text = stringResource(id = R.string.back_button))
-                Spacer(modifier = Modifier.width(16.dp))
-                CluelessButton(onClick = {
-                    viewModel.answers[currentQuestionIndex] = selectedOption ?: ""
-                    if (currentQuestionIndex < viewModel.questions.size - 1) {
-                        currentQuestionIndex++
-                    } else {
-                        viewModel.getRecommendation()
-                        onTestComplete()
-                    }
-                }, text = stringResource(id = R.string.next_button))
-            }
-        }
-    }
-}
-
-@Composable
-fun StyleTestResultScreen(outfit: Outfit?) {
-    CluelessScreenContainer {
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            ScreenTitle(stringResource(id = R.string.test_result_title))
-            Text(stringResource(id = R.string.test_result_subtitle), style = MaterialTheme.typography.bodyLarge.copy(color = Color.White, textAlign = TextAlign.Center))
-            Spacer(modifier = Modifier.height(32.dp))
-            if (outfit != null) {
-                OutfitDisplay(item = outfit.top, onPrev = {}, onNext = {})
-                Spacer(modifier = Modifier.height(16.dp))
-                OutfitDisplay(item = outfit.bottom, onPrev = {}, onNext = {})
-            } else {
-                Text(stringResource(id = R.string.test_result_no_outfit), style = MaterialTheme.typography.bodyLarge.copy(color = Color.White, textAlign = TextAlign.Center))
-            }
-        }
-    }
-}
-
-@Composable
 fun ProfileScreen(viewModel: SharedViewModel) {
     var username by remember { mutableStateOf("Cher") }
 
@@ -628,9 +727,10 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String
                 selectedImageUri = it
                 Toast.makeText(context, "Image selected!", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
-                // Si falla la persistencia, almacenar el URI de todas formas
+                // Si falla la persistencia, almacenar el URI de todas formas y loggear la excepción
                 selectedImageUri = it
                 Toast.makeText(context, "Image selected!", Toast.LENGTH_SHORT).show()
+                e.printStackTrace()
             }
         }
     }
@@ -746,8 +846,9 @@ fun ScreenTitle(title: String) {
 
 @Composable
 fun CluelessScreenContainer(overlayAlpha: Float = 0.8f, content: @Composable BoxScope.() -> Unit) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        Image(painter = painterResource(id = R.drawable.leopard_background), contentDescription = "Leopard Print Background", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        // Load background image if available, otherwise use color
+        Image(painter = painterResource(id = R.drawable.leopard_background), contentDescription = "Background", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = overlayAlpha)))
         content()
     }
@@ -783,25 +884,159 @@ sealed class Screen(val route: String, val resourceId: Int, val icon: ImageVecto
     object Calendar : Screen("calendar", R.string.calendar_title, Icons.Default.DateRange)
 }
 
-@Preview(showBackground = true)
+// Style test flow (multi-step questions) - reintroduced
 @Composable
-fun WelcomeScreenPreview() { VirtualClosetTheme { WelcomeScreen {} } }
+fun StyleTestScreen(viewModel: SharedViewModel, onTestComplete: () -> Unit) {
+    var currentQuestionIndex by remember { mutableStateOf(0) }
+    val currentQuestion = viewModel.questions[currentQuestionIndex]
+    var selectedOption by remember { mutableStateOf(viewModel.answers[currentQuestionIndex]) }
 
-@Preview(showBackground = true)
-@Composable
-fun ProfileScreenPreview() {
-    VirtualClosetTheme {
-        val previewViewModel = SharedViewModel()
-        ProfileScreen(previewViewModel)
+    CluelessScreenContainer {
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            ScreenTitle(stringResource(id = R.string.style_test_title))
+            Text(currentQuestion.text, style = MaterialTheme.typography.bodyLarge.copy(color = Color.White, textAlign = TextAlign.Center), modifier = Modifier.padding(horizontal = 16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+            currentQuestion.options.forEach { option ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp).clickable { selectedOption = option }) {
+                    RadioButton(selected = selectedOption == option, onClick = { selectedOption = option }, colors = RadioButtonDefaults.colors(selectedColor = Color.White, unselectedColor = Color.White))
+                    Text(option, style = MaterialTheme.typography.bodyLarge.copy(color = Color.White))
+                }
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            Row {
+                if (currentQuestionIndex > 0) CluelessButton(onClick = { currentQuestionIndex-- }, text = stringResource(id = R.string.back_button))
+                Spacer(modifier = Modifier.width(16.dp))
+                CluelessButton(onClick = {
+                    viewModel.answers[currentQuestionIndex] = selectedOption ?: ""
+                    if (currentQuestionIndex < viewModel.questions.size - 1) {
+                        currentQuestionIndex++
+                    } else {
+                        viewModel.getRecommendation()
+                        onTestComplete()
+                    }
+                }, text = stringResource(id = R.string.next_button))
+            }
+        }
     }
 }
 
-@Preview(showBackground = true)
+// Result screen wrapper
 @Composable
-fun StyleTestResultScreenPreview() {
-    val previewOutfit = Outfit(
-        top = ClothingItem(0, "Cool T-Shirt", "Top", null, listOf("Casual")),
-        bottom = ClothingItem(1, "Ripped Jeans", "Bottom", null, listOf("Casual"))
-    )
-    VirtualClosetTheme { StyleTestResultScreen(outfit = previewOutfit) }
+fun StyleTestResultScreen(viewModel: SharedViewModel) {
+    val suggested = viewModel.testSuggestedOutfit
+    StyleTestResultContent(suggested = suggested, onSave = { viewModel.saveSuggestedOutfit(it) })
+}
+
+// Detailed result content so previews can render without ViewModel
+@Composable
+fun StyleTestResultContent(suggested: SuggestedOutfit?, onSave: (SuggestedOutfit) -> Unit) {
+    CluelessScreenContainer {
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            ScreenTitle(stringResource(id = R.string.test_result_title))
+            Text(stringResource(id = R.string.test_result_subtitle), style = MaterialTheme.typography.bodyLarge.copy(color = Color.White, textAlign = TextAlign.Center))
+            Spacer(modifier = Modifier.height(32.dp))
+            if (suggested != null) {
+                suggested.pieces.forEachIndexed { idx, piece ->
+                    Card(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (piece.imageUri != null) {
+                                AsyncImage(model = piece.imageUri, contentDescription = piece.name, modifier = Modifier.size(80.dp).padding(end = 12.dp), contentScale = ContentScale.Crop)
+                            } else {
+                                Image(painter = painterResource(id = R.drawable.leopard_background), contentDescription = piece.name, modifier = Modifier.size(80.dp).padding(end = 12.dp))
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(piece.name, style = MaterialTheme.typography.headlineSmall)
+                                val mappedIndex = suggested.mappedToWardrobe[idx]
+                                if (mappedIndex != null) {
+                                    Text("These ${piece.name.lowercase()} from your closet match the style of the suggested look.", style = MaterialTheme.typography.bodyMedium.copy(color = Color.Gray))
+                                } else {
+                                    Text("No matching item in your closet. Consider adding one.", style = MaterialTheme.typography.bodyMedium.copy(color = Color.Gray))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                CluelessButton(onClick = { onSave(suggested) }, text = "Save suggested outfit")
+            } else {
+                Text(stringResource(id = R.string.test_result_no_outfit), style = MaterialTheme.typography.bodyLarge.copy(color = Color.White, textAlign = TextAlign.Center))
+            }
+        }
+    }
+}
+
+@Composable
+fun AssistantBubble(navController: NavController, viewModel: SharedViewModel, modifier: Modifier = Modifier) {
+    var showDialog by remember { mutableStateOf(false) }
+
+    Box(modifier = modifier) {
+        FloatingActionButton(onClick = { showDialog = true }, containerColor = Color(0xFF6A00A8)) {
+            if (viewModel.assistantAvatarUri != null) {
+                AsyncImage(model = viewModel.assistantAvatarUri, contentDescription = "Assistant avatar", modifier = Modifier.size(56.dp), contentScale = ContentScale.Crop)
+            } else {
+                Icon(Icons.Default.Star, "Assistant", tint = Color.White)
+            }
+        }
+
+        if (showDialog) {
+            AssistantDialog(onDismiss = { showDialog = false }, navController = navController, viewModel = viewModel)
+        }
+    }
+}
+
+@Composable
+fun AssistantDialog(onDismiss: () -> Unit, navController: NavController, viewModel: SharedViewModel) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(modifier = Modifier.padding(16.dp).width(320.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Assistant", style = MaterialTheme.typography.headlineSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                // Personality selection
+                Text("Personality:", style = MaterialTheme.typography.bodyLarge)
+                Spacer(modifier = Modifier.height(8.dp))
+                AssistantPersonalityRow(viewModel = viewModel)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = {
+                        // Run style test
+                        navController.navigate(Screen.StyleTest.route)
+                        onDismiss()
+                    }) { Text("Run Outfit Test") }
+                    Button(onClick = {
+                        // Suggest matches: trigger recommendation and go to result
+                        viewModel.getRecommendation()
+                        navController.navigate(Screen.StyleTestResult.route)
+                        onDismiss()
+                    }) { Text("Suggest Match") }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(onClick = onDismiss) { Text("Close") }
+            }
+        }
+    }
+}
+
+@Composable
+fun AssistantPersonalityRow(viewModel: SharedViewModel) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = viewModel.assistantPersonality == SharedViewModel.AssistantPersonality.CuteCat, onClick = { viewModel.assistantPersonality = SharedViewModel.AssistantPersonality.CuteCat })
+            Text("Cute Cat (sassy)")
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = viewModel.assistantPersonality == SharedViewModel.AssistantPersonality.FashionGuru, onClick = { viewModel.assistantPersonality = SharedViewModel.AssistantPersonality.FashionGuru })
+            Text("Fashion Guru")
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = viewModel.assistantPersonality == SharedViewModel.AssistantPersonality.MinimalistZen, onClick = { viewModel.assistantPersonality = SharedViewModel.AssistantPersonality.MinimalistZen })
+            Text("Minimalist Zen")
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = viewModel.assistantPersonality == SharedViewModel.AssistantPersonality.ChaoticGoblin, onClick = { viewModel.assistantPersonality = SharedViewModel.AssistantPersonality.ChaoticGoblin })
+            Text("Chaotic Goblin")
+        }
+    }
 }

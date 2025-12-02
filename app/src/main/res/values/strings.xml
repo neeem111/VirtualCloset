@@ -45,7 +45,7 @@
     <!-- Style Test Result Screen -->
     <string name="test_result_title">As If!</string>
     <string name="test_result_subtitle">Based on your vibes, I think this would look totally cute on you!</string>
-    <string name="test_result_no_outfit">OMG, I couldn\'t find anything! Add more clothes!</string>
+    <string name="test_result_no_outfit">OMG, I couldnt find anything! Add more clothes!</string>
 
     <!-- Profile Screen -->
     <string name="profile_title">Profile &amp; Settings</string>
@@ -65,5 +65,6 @@
     <string name="plan_button">PLAN</string>
     <string name="remove_button">REMOVE</string>
     <string name="change_button">CHANGE</string>
+
 
 </resources>

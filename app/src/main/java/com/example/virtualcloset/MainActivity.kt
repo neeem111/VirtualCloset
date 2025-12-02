@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -54,14 +56,18 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.delay
 
 // Data models used by the app (kept lightweight for MVP)
 data class ClothingItem(
     val id: Int,
     val name: String,
-    val category: String,
+    val category: String,  // Top, Bottom, Skirt, Dress, Jacket, Shoes, Accessories
     val imageUri: String? = null,
-    val styles: List<String> = emptyList()
+    val styles: List<String> = emptyList(),
+    val season: String = "All-Season",
+    val color: String = "Neutral",
+    val lastUsedDate: String? = null
 )
 
 data class Question(val text: String, val options: List<String>)
@@ -707,11 +713,14 @@ fun ProfileScreen(viewModel: SharedViewModel) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String>, String?) -> Unit) {
     var name by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("Top") }
-    var styles by remember { mutableStateOf("") }
+    var selectedStyle by remember { mutableStateOf("Casual") }
+    var selectedSeason by remember { mutableStateOf("All-Season") }
+    var selectedColor by remember { mutableStateOf("Neutral") }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     val context = LocalContext.current
     val contentResolver = context.contentResolver
@@ -727,7 +736,6 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String
                 selectedImageUri = it
                 Toast.makeText(context, "Image selected!", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
-                // Si falla la persistencia, almacenar el URI de todas formas y loggear la excepción
                 selectedImageUri = it
                 Toast.makeText(context, "Image selected!", Toast.LENGTH_SHORT).show()
                 e.printStackTrace()
@@ -745,7 +753,6 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         if (isGranted) {
-            // Pass correct MIME type to the launcher
             photoPickerLauncher.launch(arrayOf("image/*"))
         } else {
             Toast.makeText(context, "Permission denied.", Toast.LENGTH_SHORT).show()
@@ -754,37 +761,110 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String
 
     Dialog(onDismissRequest = onDismiss) {
         Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-            Column(modifier = Modifier.padding(16.dp).width(300.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .width(320.dp)
+                    .heightIn(max = 600.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Text(stringResource(id = R.string.add_item_title), style = MaterialTheme.typography.headlineLarge.copy(color = Color.Black))
                 Spacer(modifier = Modifier.height(16.dp))
+
+                // Photo picker
                 Box(
-                    modifier = Modifier.size(150.dp).background(Color.LightGray).clickable {
-                        when (ContextCompat.checkSelfPermission(context, permissionToRequest)) {
-                            PackageManager.PERMISSION_GRANTED -> {
-                                photoPickerLauncher.launch(arrayOf("image/*"))
+                    modifier = Modifier
+                        .size(120.dp)
+                        .background(Color.LightGray)
+                        .clickable {
+                            when (ContextCompat.checkSelfPermission(context, permissionToRequest)) {
+                                PackageManager.PERMISSION_GRANTED -> {
+                                    photoPickerLauncher.launch(arrayOf("image/*"))
+                                }
+                                else -> {
+                                    permissionLauncher.launch(permissionToRequest)
+                                }
                             }
-                            else -> {
-                                permissionLauncher.launch(permissionToRequest)
-                            }
-                        }
-                    },
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     if (selectedImageUri == null) {
                         Text(stringResource(id = R.string.add_photo), style = MaterialTheme.typography.bodyLarge)
                     } else {
-                        AsyncImage(model = selectedImageUri, contentDescription = "Selected image", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        AsyncImage(model = selectedImageUri, contentDescription = "Selected", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Item name
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Item Name") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Clothing Type Dropdown
+                var expandedType by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(expanded = expandedType, onExpandedChange = { expandedType = !expandedType }) {
+                    TextField(readOnly = true, value = category, onValueChange = {}, label = { Text("Clothing Type") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedType) },
+                        colors = ExposedDropdownMenuDefaults.textFieldColors(), modifier = Modifier.menuAnchor())
+                    ExposedDropdownMenu(expanded = expandedType, onDismissRequest = { expandedType = false }) {
+                        listOf("Top", "Bottom", "Skirt", "Dress", "Jacket", "Shoes", "Accessories", "Coat", "Blazer", "Hoodie").forEach { type ->
+                            DropdownMenuItem(text = { Text(type) }, onClick = { category = type; expandedType = false })
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Style Category Dropdown
+                var expandedStyle by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(expanded = expandedStyle, onExpandedChange = { expandedStyle = !expandedStyle }) {
+                    TextField(readOnly = true, value = selectedStyle, onValueChange = {}, label = { Text("Style Category") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedStyle) },
+                        colors = ExposedDropdownMenuDefaults.textFieldColors(), modifier = Modifier.menuAnchor())
+                    ExposedDropdownMenu(expanded = expandedStyle, onDismissRequest = { expandedStyle = false }) {
+                        listOf("Casual", "Elegant", "Sporty", "Streetwear", "Minimalist", "Comfy", "Trendy", "Y2K", "Vintage").forEach { style ->
+                            DropdownMenuItem(text = { Text(style) }, onClick = { selectedStyle = style; expandedStyle = false })
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Season Dropdown
+                var expandedSeason by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(expanded = expandedSeason, onExpandedChange = { expandedSeason = !expandedSeason }) {
+                    TextField(readOnly = true, value = selectedSeason, onValueChange = {}, label = { Text("Season") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedSeason) },
+                        colors = ExposedDropdownMenuDefaults.textFieldColors(), modifier = Modifier.menuAnchor())
+                    ExposedDropdownMenu(expanded = expandedSeason, onDismissRequest = { expandedSeason = false }) {
+                        listOf("Winter", "Spring", "Summer", "Fall", "All-Season").forEach { season ->
+                            DropdownMenuItem(text = { Text(season) }, onClick = { selectedSeason = season; expandedSeason = false })
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Color Dropdown
+                var expandedColor by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(expanded = expandedColor, onExpandedChange = { expandedColor = !expandedColor }) {
+                    TextField(readOnly = true, value = selectedColor, onValueChange = {}, label = { Text("Color") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedColor) },
+                        colors = ExposedDropdownMenuDefaults.textFieldColors(), modifier = Modifier.menuAnchor())
+                    ExposedDropdownMenu(expanded = expandedColor, onDismissRequest = { expandedColor = false }) {
+                        listOf("Black", "White", "Beige", "Red", "Blue", "Green", "Pastel", "Bright", "Neutral", "Brown", "Gray", "Pink").forEach { color ->
+                            DropdownMenuItem(text = { Text(color) }, onClick = { selectedColor = color; expandedColor = false })
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(stringResource(id = R.string.item_name_label), style = MaterialTheme.typography.labelSmall) })
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = category == "Top", onClick = { category = "Top" }); Text(stringResource(id = R.string.category_top), style = MaterialTheme.typography.bodyLarge)
-                    RadioButton(selected = category == "Bottom", onClick = { category = "Bottom" }); Text(stringResource(id = R.string.category_bottom), style = MaterialTheme.typography.bodyLarge)
-                }
-                OutlinedTextField(value = styles, onValueChange = { styles = it }, label = { Text(stringResource(id = R.string.styles_label), style = MaterialTheme.typography.labelSmall) })
-                Spacer(modifier = Modifier.height(16.dp))
-                CluelessButton(onClick = { onAddItem(name, category, styles.split(",").map { it.trim() }, selectedImageUri?.toString()) }, text = stringResource(id = R.string.save_button))
+
+                CluelessButton(
+                    onClick = { onAddItem(name, category, listOf(selectedStyle), selectedImageUri?.toString()) },
+                    text = "SAVE"
+                )
             }
         }
     }
@@ -920,47 +1000,94 @@ fun StyleTestScreen(viewModel: SharedViewModel, onTestComplete: () -> Unit) {
     }
 }
 
-// Result screen wrapper
+// Result screen wrapper with loading
 @Composable
 fun StyleTestResultScreen(viewModel: SharedViewModel) {
-    val suggested = viewModel.testSuggestedOutfit
-    StyleTestResultContent(suggested = suggested, onSave = { viewModel.saveSuggestedOutfit(it) })
+    var isLoading by remember { mutableStateOf(true) }
+    var outfitRecommendation by remember { mutableStateOf<com.example.virtualcloset.logic.OutfitRecommendation?>(null) }
+
+    LaunchedEffect(Unit) {
+        // Simulate loading and generate outfit
+        delay(1500)
+        outfitRecommendation = com.example.virtualcloset.logic.OutfitGenerator.generateOutfit(viewModel.answers)
+        isLoading = false
+    }
+
+    if (isLoading) {
+        com.example.virtualcloset.ui.components.LoadingScreen("Finding your perfect look...")
+    } else {
+        StyleTestResultContent(
+            recommendation = outfitRecommendation,
+            onSave = {
+                if (outfitRecommendation != null) {
+                    // Save as suggested outfit
+                }
+            }
+        )
+    }
 }
 
-// Detailed result content so previews can render without ViewModel
+// Detailed result content with outfit recommendation
 @Composable
-fun StyleTestResultContent(suggested: SuggestedOutfit?, onSave: (SuggestedOutfit) -> Unit) {
+fun StyleTestResultContent(
+    recommendation: com.example.virtualcloset.logic.OutfitRecommendation?,
+    onSave: () -> Unit
+) {
     CluelessScreenContainer {
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Column(modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             ScreenTitle(stringResource(id = R.string.test_result_title))
-            Text(stringResource(id = R.string.test_result_subtitle), style = MaterialTheme.typography.bodyLarge.copy(color = Color.White, textAlign = TextAlign.Center))
-            Spacer(modifier = Modifier.height(32.dp))
-            if (suggested != null) {
-                suggested.pieces.forEachIndexed { idx, piece ->
-                    Card(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
-                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            if (piece.imageUri != null) {
-                                AsyncImage(model = piece.imageUri, contentDescription = piece.name, modifier = Modifier.size(80.dp).padding(end = 12.dp), contentScale = ContentScale.Crop)
-                            } else {
-                                Image(painter = painterResource(id = R.drawable.leopard_background), contentDescription = piece.name, modifier = Modifier.size(80.dp).padding(end = 12.dp))
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(piece.name, style = MaterialTheme.typography.headlineSmall)
-                                val mappedIndex = suggested.mappedToWardrobe[idx]
-                                if (mappedIndex != null) {
-                                    Text("These ${piece.name.lowercase()} from your closet match the style of the suggested look.", style = MaterialTheme.typography.bodyMedium.copy(color = Color.Gray))
-                                } else {
-                                    Text("No matching item in your closet. Consider adding one.", style = MaterialTheme.typography.bodyMedium.copy(color = Color.Gray))
-                                }
+
+            if (recommendation != null) {
+                Text(
+                    recommendation.description,
+                    style = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Display recommended items
+                Text("Your Outfit:", style = MaterialTheme.typography.headlineLarge.copy(color = Color(0xFFFF69B4)))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Temperature items
+                if (recommendation.temperatureBased.isNotEmpty()) {
+                    Card(modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp)) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("For Temperature:", style = MaterialTheme.typography.labelMedium.copy(color = Color.Gray))
+                            recommendation.temperatureBased.forEach { item ->
+                                Text("• $item", style = MaterialTheme.typography.bodyMedium.copy(color = Color.White))
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-                CluelessButton(onClick = { onSave(suggested) }, text = "Save suggested outfit")
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Color scheme
+                if (recommendation.colorPreference.isNotEmpty()) {
+                    Card(modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp)) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("Colors:", style = MaterialTheme.typography.labelMedium.copy(color = Color.Gray))
+                            Text(recommendation.colorPreference.joinToString(", "),
+                                style = MaterialTheme.typography.bodyMedium.copy(color = Color.White))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+                CluelessButton(onClick = onSave, text = "SAVE OUTFIT")
             } else {
-                Text(stringResource(id = R.string.test_result_no_outfit), style = MaterialTheme.typography.bodyLarge.copy(color = Color.White, textAlign = TextAlign.Center))
+                Text("Could not generate outfit. Try again!",
+                    style = MaterialTheme.typography.bodyLarge.copy(color = Color.Red))
             }
         }
     }

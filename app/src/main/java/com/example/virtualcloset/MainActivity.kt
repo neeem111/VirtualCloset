@@ -284,18 +284,28 @@ class MainActivity : ComponentActivity() {
             val language by remember { derivedStateOf { viewModel.language } }
             val fontSizeMultiplier by remember { derivedStateOf { viewModel.fontSizeMultiplier } }
 
+            // Update app language when language preference changes
+            LaunchedEffect(language) {
+                val locale = when (language) {
+                    "es" -> Locale("es", "ES")
+                    else -> Locale("en", "US")
+                }
+                Locale.setDefault(locale)
+                val config = resources.configuration
+                config.setLocale(locale)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    createConfigurationContext(config)
+                }
+                resources.updateConfiguration(config, resources.displayMetrics)
+            }
+
             // This wrapper Composable will react to state changes and update the theme and context
             AppThemeWrapper(language = language, fontSizeMultiplier = fontSizeMultiplier) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val navController = rememberNavController()
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        NavHost(navController = navController, startDestination = Screen.Welcome.route) {
-                            composable(Screen.Welcome.route) { WelcomeScreen { navController.navigate(Screen.Main.route) { popUpTo(Screen.Welcome.route) { inclusive = true } } } }
-                            composable(Screen.Main.route) { MainScreen(viewModel) }
-                        }
-
-                        // Assistant floating bubble overlay
-                        AssistantBubble(navController = navController, viewModel = viewModel, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp))
+                    NavHost(navController = navController, startDestination = Screen.Welcome.route) {
+                        composable(Screen.Welcome.route) { WelcomeScreen { navController.navigate(Screen.Main.route) { popUpTo(Screen.Welcome.route) { inclusive = true } } } }
+                        composable(Screen.Main.route) { MainScreen(viewModel) }
                     }
                 }
             }
@@ -305,7 +315,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppThemeWrapper(language: String, fontSizeMultiplier: Float, content: @Composable () -> Unit) {
-    val dynamicTypography = remember(fontSizeMultiplier) {
+    val dynamicTypography = remember(fontSizeMultiplier, language) {
         AppTypography.copy(
             displayLarge = AppTypography.displayLarge.copy(fontSize = AppTypography.displayLarge.fontSize * fontSizeMultiplier),
             headlineLarge = AppTypography.headlineLarge.copy(fontSize = AppTypography.headlineLarge.fontSize * fontSizeMultiplier),
@@ -314,8 +324,11 @@ fun AppThemeWrapper(language: String, fontSizeMultiplier: Float, content: @Compo
         )
     }
 
-    VirtualClosetTheme(typography = dynamicTypography) {
-        content()
+    // Force complete recomposition when language changes
+    key(language) {
+        VirtualClosetTheme(typography = dynamicTypography) {
+            content()
+        }
     }
 }
 
@@ -347,10 +360,18 @@ fun WelcomeScreen(onContinueClicked: () -> Unit) {
 @Composable
 fun MainScreen(sharedViewModel: SharedViewModel) {
     val navController = rememberNavController()
-    Scaffold(bottomBar = { BottomNavigationBar(navController = navController) }) {
-        Box(modifier = Modifier.padding(it)) {
-            MainAppNavGraph(navController = navController, viewModel = sharedViewModel)
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            bottomBar = { BottomNavigationBar(navController = navController) },
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(modifier = Modifier.padding(it).fillMaxSize()) {
+                MainAppNavGraph(navController = navController, viewModel = sharedViewModel)
+            }
         }
+
+        // Assistant floating bubble overlay (top-right)
+        AssistantBubble(navController = navController, viewModel = sharedViewModel, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp))
     }
 }
 
@@ -974,7 +995,7 @@ sealed class Screen(val route: String, val resourceId: Int, val icon: ImageVecto
 fun StyleTestScreen(viewModel: SharedViewModel, onTestComplete: () -> Unit) {
     var currentQuestionIndex by remember { mutableStateOf(0) }
     val currentQuestion = viewModel.questions[currentQuestionIndex]
-    var selectedOption by remember { mutableStateOf(viewModel.answers[currentQuestionIndex]) }
+    var selectedOption by remember { mutableStateOf(viewModel.answers[currentQuestionIndex] ?: "") }
 
     CluelessScreenContainer {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -982,24 +1003,48 @@ fun StyleTestScreen(viewModel: SharedViewModel, onTestComplete: () -> Unit) {
             Text(currentQuestion.text, style = MaterialTheme.typography.bodyLarge.copy(color = Color.White, textAlign = TextAlign.Center), modifier = Modifier.padding(horizontal = 16.dp))
             Spacer(modifier = Modifier.height(16.dp))
             currentQuestion.options.forEach { option ->
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp).clickable { selectedOption = option }) {
-                    RadioButton(selected = selectedOption == option, onClick = { selectedOption = option }, colors = RadioButtonDefaults.colors(selectedColor = Color.White, unselectedColor = Color.White))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp)
+                    .clickable { selectedOption = option }) {
+                    RadioButton(
+                        selected = selectedOption == option,
+                        onClick = { selectedOption = option },
+                        colors = RadioButtonDefaults.colors(selectedColor = Color.White, unselectedColor = Color.White)
+                    )
                     Text(option, style = MaterialTheme.typography.bodyLarge.copy(color = Color.White))
                 }
             }
             Spacer(modifier = Modifier.weight(1f))
             Row {
-                if (currentQuestionIndex > 0) CluelessButton(onClick = { currentQuestionIndex-- }, text = stringResource(id = R.string.back_button))
+                if (currentQuestionIndex > 0) {
+                    CluelessButton(
+                        onClick = {
+                            // Save current answer before going back
+                            viewModel.answers[currentQuestionIndex] = selectedOption
+                            currentQuestionIndex--
+                            // Load the previous question's answer
+                            selectedOption = viewModel.answers[currentQuestionIndex] ?: ""
+                        },
+                        text = stringResource(id = R.string.back_button)
+                    )
+                }
                 Spacer(modifier = Modifier.width(16.dp))
-                CluelessButton(onClick = {
-                    viewModel.answers[currentQuestionIndex] = selectedOption ?: ""
-                    if (currentQuestionIndex < viewModel.questions.size - 1) {
-                        currentQuestionIndex++
-                    } else {
-                        viewModel.getRecommendation()
-                        onTestComplete()
-                    }
-                }, text = stringResource(id = R.string.next_button))
+                CluelessButton(
+                    onClick = {
+                        // Save current answer
+                        viewModel.answers[currentQuestionIndex] = selectedOption
+                        if (currentQuestionIndex < viewModel.questions.size - 1) {
+                            currentQuestionIndex++
+                            // Load the next question's answer (if any)
+                            selectedOption = viewModel.answers[currentQuestionIndex] ?: ""
+                        } else {
+                            // On last question, complete the test
+                            onTestComplete()
+                        }
+                    },
+                    text = stringResource(id = R.string.next_button)
+                )
             }
         }
     }
@@ -1009,13 +1054,13 @@ fun StyleTestScreen(viewModel: SharedViewModel, onTestComplete: () -> Unit) {
 @Composable
 fun StyleTestResultScreen(viewModel: SharedViewModel) {
     var isLoading by remember { mutableStateOf(true) }
-    var outfitRecommendation by remember { mutableStateOf<com.example.virtualcloset.logic.OutfitRecommendation?>(null) }
+    var suggestedOutfit by remember { mutableStateOf<SuggestedOutfit?>(null) }
 
     LaunchedEffect(Unit) {
         try {
-            // Simulate loading and generate outfit
+            // Simulate loading and generate outfit using the ViewModel's method
             delay(2000)
-            outfitRecommendation = com.example.virtualcloset.logic.OutfitGenerator.generateOutfit(viewModel.answers)
+            suggestedOutfit = viewModel.getRecommendation()
             isLoading = false
         } catch (e: Exception) {
             e.printStackTrace()
@@ -1026,19 +1071,34 @@ fun StyleTestResultScreen(viewModel: SharedViewModel) {
     if (isLoading) {
         LoadingScreenWithGlitter()
     } else {
-        StyleTestResultContent(
-            recommendation = outfitRecommendation,
-            onSave = {}
-        )
+        if (suggestedOutfit != null) {
+            StyleTestResultContent(
+                suggestion = suggestedOutfit!!,
+                viewModel = viewModel
+            )
+        } else {
+            CluelessScreenContainer {
+                Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    ScreenTitle(stringResource(id = R.string.test_result_title))
+                    Text(stringResource(id = R.string.test_result_no_outfit), style = MaterialTheme.typography.bodyLarge.copy(color = Color.White), textAlign = TextAlign.Center)
+                }
+            }
+        }
     }
 }
 
-// Pantalla de carga con efecto glitter
+// Pantalla de carga con efecto glitter y fondo leopardo
 @Composable
 fun LoadingScreenWithGlitter() {
     Box(modifier = Modifier
         .fillMaxSize()
         .background(Color.Black)) {
+
+        // Background leopard image
+        Image(painter = painterResource(id = R.drawable.leopard_background), contentDescription = "Background", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+
+        // Overlay
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)))
 
         val infiniteTransition = rememberInfiniteTransition("loading-glitter")
         val glitterAlpha by infiniteTransition.animateFloat(
@@ -1080,8 +1140,8 @@ fun LoadingScreenWithGlitter() {
 // Detailed result content with outfit recommendation
 @Composable
 fun StyleTestResultContent(
-    recommendation: com.example.virtualcloset.logic.OutfitRecommendation?,
-    onSave: () -> Unit
+    suggestion: SuggestedOutfit,
+    viewModel: SharedViewModel
 ) {
     CluelessScreenContainer {
         Column(modifier = Modifier
@@ -1091,54 +1151,54 @@ fun StyleTestResultContent(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             ScreenTitle(stringResource(id = R.string.test_result_title))
+            Text(stringResource(id = R.string.test_result_subtitle), style = MaterialTheme.typography.bodyLarge.copy(color = Color.White), textAlign = TextAlign.Center)
+            Spacer(modifier = Modifier.height(24.dp))
 
-            if (recommendation != null) {
-                Text(
-                    recommendation.description,
-                    style = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(24.dp))
+            // Display recommended items
+            Text("Your Perfect Outfit:", style = MaterialTheme.typography.headlineLarge.copy(color = Color(0xFFFF69B4)))
+            Spacer(modifier = Modifier.height(16.dp))
 
-                // Display recommended items
-                Text("Your Outfit:", style = MaterialTheme.typography.headlineLarge.copy(color = Color(0xFFFF69B4)))
-                Spacer(modifier = Modifier.height(12.dp))
+            // Show each piece with matching info
+            suggestion.pieces.forEachIndexed { idx, piece ->
+                val mappedIndex = suggestion.mappedToWardrobe[idx]
+                val isFromCloset = mappedIndex != null && mappedIndex >= 0
 
-                // Temperature items
-                if (recommendation.temperatureBased.isNotEmpty()) {
-                    Card(modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp)) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text("For Temperature:", style = MaterialTheme.typography.labelMedium.copy(color = Color.Gray))
-                            recommendation.temperatureBased.forEach { item ->
-                                Text("• $item", style = MaterialTheme.typography.bodyMedium.copy(color = Color.White))
-                            }
+                Card(modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp)) {
+                    Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        // Show image if available
+                        if (piece.imageUri != null) {
+                            AsyncImage(
+                                model = piece.imageUri,
+                                contentDescription = piece.name,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(120.dp),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+
+                        Text(piece.name, style = MaterialTheme.typography.headlineSmall.copy(color = Color.Black))
+                        Text(piece.category, style = MaterialTheme.typography.bodySmall.copy(color = Color.Gray))
+
+                        if (isFromCloset) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("✨ This is in your closet!", style = MaterialTheme.typography.bodySmall.copy(color = Color(0xFF6A00A8)))
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Color scheme
-                if (recommendation.colorPreference.isNotEmpty()) {
-                    Card(modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp)) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text("Colors:", style = MaterialTheme.typography.labelMedium.copy(color = Color.Gray))
-                            Text(recommendation.colorPreference.joinToString(", "),
-                                style = MaterialTheme.typography.bodyMedium.copy(color = Color.White))
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-                CluelessButton(onClick = onSave, text = "SAVE OUTFIT")
-            } else {
-                Text("Could not generate outfit. Try again!",
-                    style = MaterialTheme.typography.bodyLarge.copy(color = Color.Red))
+                Spacer(modifier = Modifier.height(8.dp))
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            CluelessButton(
+                onClick = {
+                    viewModel.saveSuggestedOutfit(suggestion)
+                    // TODO: Navigate back or show confirmation
+                },
+                text = "SAVE OUTFIT"
+            )
         }
     }
 }

@@ -58,6 +58,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.delay
+import androidx.compose.runtime.saveable.rememberSaveable
 
 // Data models used by the app (kept lightweight for MVP)
 data class ClothingItem(
@@ -260,16 +261,12 @@ class SharedViewModel : ViewModel() {
         }
     }
 
-    var testResult by mutableStateOf<Outfit?>(null)
-
     // Assistant state
     enum class AssistantPersonality { CuteCat, FashionGuru, MinimalistZen, ChaoticGoblin }
     var assistantPersonality by mutableStateOf(AssistantPersonality.FashionGuru)
     var assistantAvatarUri by mutableStateOf<String?>(null)
 
     // Use direct property assignment for assistantPersonality (avoid JVM signature clashes)
-    // fun setAssistantPersonality(p: AssistantPersonality) { assistantPersonality = p }
-    fun setAssistantAvatar(uri: String?) { assistantAvatarUri = uri }
 }
 
 class MainActivity : ComponentActivity() {
@@ -287,8 +284,8 @@ class MainActivity : ComponentActivity() {
             // Update app language when language preference changes
             LaunchedEffect(language) {
                 val locale = when (language) {
-                    "es" -> Locale("es", "ES")
-                    else -> Locale("en", "US")
+                    "es" -> Locale.forLanguageTag("es-ES")
+                    else -> Locale.forLanguageTag("en-US")
                 }
                 Locale.setDefault(locale)
                 val config = resources.configuration
@@ -296,7 +293,7 @@ class MainActivity : ComponentActivity() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     createConfigurationContext(config)
                 }
-                resources.updateConfiguration(config, resources.displayMetrics)
+                // resources.updateConfiguration(config, resources.displayMetrics) // <- Deprecated, but needed for compatibility
             }
 
             // This wrapper Composable will react to state changes and update the theme and context
@@ -381,11 +378,23 @@ fun MainAppNavGraph(navController: NavHostController, viewModel: SharedViewModel
         composable(Screen.MyCloset.route) { MyClosetScreen(viewModel) }
         composable(Screen.DressMe.route) { DressMeScreen(viewModel) }
         composable(Screen.Assistant.route) { AssistantScreen(navController) }
-        composable(Screen.StyleTest.route) { StyleTestScreen(viewModel = viewModel, onTestComplete = {
-            // generate recommendation and navigate to result
-            viewModel.getRecommendation()
-            navController.navigate(Screen.StyleTestResult.route)
-        }) }
+        composable(Screen.StyleTest.route) {
+            val ctx = LocalContext.current
+            StyleTestScreen(viewModel = viewModel, onTestComplete = {
+                val allAnswered = viewModel.questions.indices.all { idx ->
+                    (viewModel.answers[idx] ?: "").isNotBlank()
+                }
+                if (allAnswered) {
+                    navController.navigate("loading_outfit")
+                } else {
+                    Toast.makeText(ctx, "Please answer all questions.", Toast.LENGTH_SHORT).show()
+                }
+            })
+        }
+        // Loading screen route before showing result
+        composable("loading_outfit") {
+            LoadingOutfitScreen(viewModel = viewModel, navController = navController)
+        }
         composable(Screen.StyleTestResult.route) { StyleTestResultScreen(viewModel = viewModel) }
         composable(Screen.Profile.route) { ProfileScreen(viewModel) }
         composable(Screen.Calendar.route) { CalendarScreen(viewModel) }
@@ -832,7 +841,7 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String
                 ExposedDropdownMenuBox(expanded = expandedType, onExpandedChange = { expandedType = !expandedType }) {
                     TextField(readOnly = true, value = category, onValueChange = {}, label = { Text("Clothing Type") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedType) },
-                        colors = ExposedDropdownMenuDefaults.textFieldColors(), modifier = Modifier.menuAnchor())
+                        colors = ExposedDropdownMenuDefaults.textFieldColors())
                     ExposedDropdownMenu(expanded = expandedType, onDismissRequest = { expandedType = false }) {
                         listOf("Top", "Bottom", "Skirt", "Dress", "Jacket", "Shoes", "Accessories", "Coat", "Blazer", "Hoodie").forEach { type ->
                             DropdownMenuItem(text = { Text(type) }, onClick = { category = type; expandedType = false })
@@ -846,7 +855,7 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String
                 ExposedDropdownMenuBox(expanded = expandedStyle, onExpandedChange = { expandedStyle = !expandedStyle }) {
                     TextField(readOnly = true, value = selectedStyle, onValueChange = {}, label = { Text("Style Category") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedStyle) },
-                        colors = ExposedDropdownMenuDefaults.textFieldColors(), modifier = Modifier.menuAnchor())
+                        colors = ExposedDropdownMenuDefaults.textFieldColors())
                     ExposedDropdownMenu(expanded = expandedStyle, onDismissRequest = { expandedStyle = false }) {
                         listOf("Casual", "Elegant", "Sporty", "Streetwear", "Minimalist", "Comfy", "Trendy", "Y2K", "Vintage").forEach { style ->
                             DropdownMenuItem(text = { Text(style) }, onClick = { selectedStyle = style; expandedStyle = false })
@@ -860,7 +869,7 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String
                 ExposedDropdownMenuBox(expanded = expandedSeason, onExpandedChange = { expandedSeason = !expandedSeason }) {
                     TextField(readOnly = true, value = selectedSeason, onValueChange = {}, label = { Text("Season") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedSeason) },
-                        colors = ExposedDropdownMenuDefaults.textFieldColors(), modifier = Modifier.menuAnchor())
+                        colors = ExposedDropdownMenuDefaults.textFieldColors())
                     ExposedDropdownMenu(expanded = expandedSeason, onDismissRequest = { expandedSeason = false }) {
                         listOf("Winter", "Spring", "Summer", "Fall", "All-Season").forEach { season ->
                             DropdownMenuItem(text = { Text(season) }, onClick = { selectedSeason = season; expandedSeason = false })
@@ -874,7 +883,7 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String
                 ExposedDropdownMenuBox(expanded = expandedColor, onExpandedChange = { expandedColor = !expandedColor }) {
                     TextField(readOnly = true, value = selectedColor, onValueChange = {}, label = { Text("Color") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedColor) },
-                        colors = ExposedDropdownMenuDefaults.textFieldColors(), modifier = Modifier.menuAnchor())
+                        colors = ExposedDropdownMenuDefaults.textFieldColors())
                     ExposedDropdownMenu(expanded = expandedColor, onDismissRequest = { expandedColor = false }) {
                         listOf("Black", "White", "Beige", "Red", "Blue", "Green", "Pastel", "Bright", "Neutral", "Brown", "Gray", "Pink").forEach { color ->
                             DropdownMenuItem(text = { Text(color) }, onClick = { selectedColor = color; expandedColor = false })
@@ -924,10 +933,10 @@ fun OutfitDisplay(item: ClothingItem?, onPrev: () -> Unit, onNext: () -> Unit) {
         }
         Row(modifier = Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             FloatingActionButton(onClick = onPrev, modifier = Modifier.size(56.dp), containerColor = Color(0xFF6A00A8)) {
-                Icon(Icons.Default.KeyboardArrowLeft, "Previous", tint = Color.White, modifier = Modifier.size(56.dp))
+                Icon(Icons.Filled.KeyboardArrowLeft, "Previous", tint = Color.White, modifier = Modifier.size(56.dp))
             }
             FloatingActionButton(onClick = onNext, modifier = Modifier.size(56.dp), containerColor = Color(0xFF6A00A8)) {
-                Icon(Icons.Default.KeyboardArrowRight, "Next", tint = Color.White, modifier = Modifier.size(56.dp))
+                Icon(Icons.Filled.KeyboardArrowRight, "Next", tint = Color.White, modifier = Modifier.size(56.dp))
             }
         }
     }
@@ -981,7 +990,7 @@ fun BottomNavigationBar(navController: NavController) {
 sealed class Screen(val route: String, val resourceId: Int, val icon: ImageVector) {
     object Welcome : Screen("welcome", R.string.welcome_title, Icons.Default.Home)
     object Main : Screen("main", R.string.app_name, Icons.Default.Home)
-    object MyCloset : Screen("my_closet", R.string.nav_closet, Icons.Default.List)
+    object MyCloset : Screen("my_closet", R.string.nav_closet, Icons.Filled.List)
     object DressMe : Screen("dress_me", R.string.nav_dress_me, Icons.Default.Face)
     object Assistant : Screen("assistant", R.string.nav_assistant, Icons.Default.Star)
     object StyleTest : Screen("style_test", R.string.style_test_title, Icons.Default.Star)
@@ -993,9 +1002,9 @@ sealed class Screen(val route: String, val resourceId: Int, val icon: ImageVecto
 // Style test flow (multi-step questions) - reintroduced
 @Composable
 fun StyleTestScreen(viewModel: SharedViewModel, onTestComplete: () -> Unit) {
-    var currentQuestionIndex by remember { mutableStateOf(0) }
-    val currentQuestion = viewModel.questions[currentQuestionIndex]
-    var selectedOption by remember { mutableStateOf(viewModel.answers[currentQuestionIndex] ?: "") }
+    var currentQuestionIndex by rememberSaveable { mutableStateOf(0) }
+    val currentQuestion = viewModel.questions.getOrNull(currentQuestionIndex) ?: viewModel.questions.first()
+    var selectedOption by rememberSaveable(currentQuestionIndex) { mutableStateOf(viewModel.answers[currentQuestionIndex] ?: "") }
 
     CluelessScreenContainer {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -1015,14 +1024,14 @@ fun StyleTestScreen(viewModel: SharedViewModel, onTestComplete: () -> Unit) {
                     Text(option, style = MaterialTheme.typography.bodyLarge.copy(color = Color.White))
                 }
             }
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(32.dp))
             Row {
                 if (currentQuestionIndex > 0) {
                     CluelessButton(
                         onClick = {
                             // Save current answer before going back
                             viewModel.answers[currentQuestionIndex] = selectedOption
-                            currentQuestionIndex--
+                            currentQuestionIndex = currentQuestionIndex - 1
                             // Load the previous question's answer
                             selectedOption = viewModel.answers[currentQuestionIndex] ?: ""
                         },
@@ -1035,7 +1044,7 @@ fun StyleTestScreen(viewModel: SharedViewModel, onTestComplete: () -> Unit) {
                         // Save current answer
                         viewModel.answers[currentQuestionIndex] = selectedOption
                         if (currentQuestionIndex < viewModel.questions.size - 1) {
-                            currentQuestionIndex++
+                            currentQuestionIndex = currentQuestionIndex + 1
                             // Load the next question's answer (if any)
                             selectedOption = viewModel.answers[currentQuestionIndex] ?: ""
                         } else {
@@ -1266,6 +1275,46 @@ fun AssistantDialog(onDismiss: () -> Unit, navController: NavController, viewMod
                         Text("Close")
                     }
                 }
+            }
+        }
+    }
+}
+
+// Loading screen that runs recommendation safely and then navigates to the result screen
+@Composable
+fun LoadingOutfitScreen(viewModel: SharedViewModel, navController: NavController) {
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        try {
+            // Simulate an async AI call with timeout and graceful handling
+            // In production, call your AI service inside a suspend function
+            delay(1500)
+            viewModel.getRecommendation()
+            navController.navigate(Screen.StyleTestResult.route) {
+                popUpTo("loading_outfit") { inclusive = true }
+            }
+        } catch (e: Exception) {
+            error = e.message ?: "Unexpected error"
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        // Show glitter loading
+        LoadingScreenWithGlitter()
+        // Error overlay with retry if something failed
+        error?.let { msg ->
+            Column(
+                modifier = Modifier.fillMaxSize().padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Bottom
+            ) {
+                Text(text = msg, color = Color.White)
+                Spacer(modifier = Modifier.height(8.dp))
+                CluelessButton(onClick = {
+                    error = null
+                    // Retry by re-triggering LaunchedEffect via navigation
+                    navController.navigate("loading_outfit") { popUpTo("loading_outfit") { inclusive = true } }
+                }, text = "Retry")
             }
         }
     }

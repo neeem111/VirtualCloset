@@ -50,7 +50,6 @@ import com.example.virtualcloset.ui.theme.AppTypography
 import com.example.virtualcloset.ui.theme.CluelessFont
 import com.example.virtualcloset.ui.theme.VirtualClosetTheme
 import java.util.Locale
-import kotlin.random.Random
 import androidx.navigation.NavController
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -59,6 +58,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.palette.graphics.Palette
 
 // --- ENUMS PARA TIPO, COLOR Y ESTILO ---
 enum class ClothingType { TOP, BOTTOM, DRESS, OUTERWEAR, SHOES, SKIRT, JACKET, ACCESSORIES, COAT, BLAZER, HOODIE, OTHER }
@@ -477,6 +477,8 @@ fun MainAppNavGraph(navController: NavHostController, viewModel: SharedViewModel
         composable(Screen.StyleTestResult.route) { StyleTestResultScreen(viewModel = viewModel) }
         composable(Screen.Profile.route) { ProfileScreen(viewModel) }
         composable(Screen.Calendar.route) { CalendarScreen(viewModel) }
+        // --- NUEVO: Ruta de estadísticas ---
+        composable("statistics") { StatisticsScreen(viewModel) }
     }
 }
 
@@ -839,6 +841,34 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, ClothingType, Cloth
     val context = LocalContext.current
     val contentResolver = context.contentResolver
 
+    // --- NUEVO: Detectar color dominante al seleccionar imagen ---
+    fun detectDominantColor(uri: Uri?, onColorDetected: (String) -> Unit) {
+        if (uri == null) return
+        try {
+            val inputStream = contentResolver.openInputStream(uri)
+            val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+            inputStream?.close()
+            if (bitmap != null) {
+                Palette.from(bitmap).generate { palette: Palette? ->
+                    val colorInt = palette?.getDominantColor(android.graphics.Color.GRAY) ?: android.graphics.Color.GRAY
+                    val colorName = when (colorInt) {
+                        in 0xFF000000.toInt()..0xFF222222.toInt() -> "Black"
+                        in 0xFFFFFFFF.toInt()..0xFFFFFFFF.toInt() -> "White"
+                        in 0xFFB0B0B0.toInt()..0xFFD0D0D0.toInt() -> "Gray"
+                        in 0xFF800000.toInt()..0xFFFF0000.toInt() -> "Red"
+                        in 0xFF008000.toInt()..0xFF00FF00.toInt() -> "Green"
+                        in 0xFF000080.toInt()..0xFF0000FF.toInt() -> "Blue"
+                        in 0xFFFFFF00.toInt()..0xFFFFFF00.toInt() -> "Yellow"
+                        in 0xFFFFA500.toInt()..0xFFFFA500.toInt() -> "Orange"
+                        in 0xFFFFC0CB.toInt()..0xFFFFC0CB.toInt() -> "Pink"
+                        else -> "Neutral"
+                    }
+                    onColorDetected(colorName)
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
     // Use OpenDocument for persistent URI access
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -848,9 +878,11 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, ClothingType, Cloth
                 val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
                 contentResolver.takePersistableUriPermission(it, takeFlags)
                 selectedImageUri = it
+                detectDominantColor(it) { detected -> selectedColor = detected }
                 Toast.makeText(context, "Image selected!", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 selectedImageUri = it
+                detectDominantColor(it) { detected -> selectedColor = detected }
                 Toast.makeText(context, "Image selected!", Toast.LENGTH_SHORT).show()
                 e.printStackTrace()
             }
@@ -977,9 +1009,9 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, ClothingType, Cloth
 
                 CluelessButton(
                     onClick = {
-                        val typeEnum = try { ClothingType.valueOf(category.uppercase()) } catch (e: Exception) { ClothingType.OTHER }
-                        val colorEnum = try { ClothingColor.valueOf(selectedColor.uppercase()) } catch (e: Exception) { ClothingColor.NEUTRAL }
-                        val styleEnum = try { ClothingStyle.valueOf(selectedStyle.uppercase()) } catch (e: Exception) { ClothingStyle.NEUTRAL }
+                        val typeEnum = try { ClothingType.valueOf(category.uppercase()) } catch (_: Exception) { ClothingType.OTHER }
+                        val colorEnum = try { ClothingColor.valueOf(selectedColor.uppercase()) } catch (_: Exception) { ClothingColor.NEUTRAL }
+                        val styleEnum = try { ClothingStyle.valueOf(selectedStyle.uppercase()) } catch (_: Exception) { ClothingStyle.NEUTRAL }
                         onAddItem(name, typeEnum, colorEnum, styleEnum, selectedImageUri?.toString())
                     },
                     text = "SAVE"
@@ -1403,6 +1435,33 @@ fun LoadingOutfitScreen(viewModel: SharedViewModel, navController: NavController
                     // Retry by re-triggering LaunchedEffect via navigation
                     navController.navigate("loading_outfit") { popUpTo("loading_outfit") { inclusive = true } }
                 }, text = "Retry")
+            }
+        }
+    }
+}
+
+// 1. Pantalla de estadísticas de uso de tops
+@Composable
+fun StatisticsScreen(viewModel: SharedViewModel) {
+    // Simulación: cuenta cuántas veces se ha usado cada top (por lastUsedDate no nulo)
+    val tops = viewModel.clothingItems.filter { it.type == ClothingType.TOP }
+    val usageMap = tops.groupBy { it.name }.mapValues { entry ->
+        entry.value.count { it.lastUsedDate != null }
+    }.toList().sortedByDescending { it.second }
+
+    CluelessScreenContainer {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            ScreenTitle("Tus Tops Más Usados")
+            Spacer(modifier = Modifier.height(16.dp))
+            if (usageMap.isEmpty()) {
+                Text("No hay tops registrados.", color = Color.White)
+            } else {
+                usageMap.take(5).forEach { (name, count) ->
+                    Text("$name: $count usos", color = Color.White, style = MaterialTheme.typography.bodyLarge)
+                }
             }
         }
     }

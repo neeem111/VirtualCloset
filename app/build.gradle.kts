@@ -62,6 +62,16 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     implementation("androidx.navigation:navigation-compose:2.8.0-beta01")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
-
-
+    // Room
+    implementation("androidx.room:room-runtime:2.6.1")
+    kapt("androidx.room:room-compiler:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    // ML Kit
+    implementation("com.google.mlkit:image-labeling:17.0.7")
+    // Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    // Palette para análisis de color
+    implementation("androidx.palette:palette-ktx:1.0.0")
 }
+
+private fun DependencyHandlerScope.kapt(string: String) {}

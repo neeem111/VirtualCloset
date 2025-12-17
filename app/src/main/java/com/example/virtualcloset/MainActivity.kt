@@ -1440,29 +1440,75 @@ fun LoadingOutfitScreen(viewModel: SharedViewModel, navController: NavController
     }
 }
 
-// 1. Pantalla de estadísticas de uso de tops
+// 1. Pantalla de estadísticas de uso de tops mejorada
 @Composable
 fun StatisticsScreen(viewModel: SharedViewModel) {
-    // Simulación: cuenta cuántas veces se ha usado cada top (por lastUsedDate no nulo)
+    // Prendas agrupadas por tipo
     val tops = viewModel.clothingItems.filter { it.type == ClothingType.TOP }
-    val usageMap = tops.groupBy { it.name }.mapValues { entry ->
+    val bottoms = viewModel.clothingItems.filter { it.type == ClothingType.BOTTOM }
+    val shoes = viewModel.clothingItems.filter { it.type == ClothingType.SHOES }
+    val forgottenItems = viewModel.clothingItems.filter {
+        val lastUsed = it.lastUsedDate?.toLongOrNull() ?: 0L
+        lastUsed == 0L || lastUsed < System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
+    }
+    val colorMap = viewModel.clothingItems.groupBy { it.color }.mapValues { it.value.size }
+    val usageMap = viewModel.clothingItems.groupBy { it.name }.mapValues { entry ->
         entry.value.count { it.lastUsedDate != null }
     }.toList().sortedByDescending { it.second }
 
     CluelessScreenContainer {
         Column(
-            modifier = Modifier.fillMaxSize().padding(16.dp),
+            modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             ScreenTitle("Tus Tops Más Usados")
             Spacer(modifier = Modifier.height(16.dp))
             if (usageMap.isEmpty()) {
-                Text("No hay tops registrados.", color = Color.White)
+                Text("No hay prendas registradas.", color = Color.White)
             } else {
                 usageMap.take(5).forEach { (name, count) ->
                     Text("$name: $count usos", color = Color.White, style = MaterialTheme.typography.bodyLarge)
                 }
             }
+            Spacer(modifier = Modifier.height(24.dp))
+            Text("Prendas olvidadas (30+ días sin usar):", color = Color.White, style = MaterialTheme.typography.bodyLarge)
+            forgottenItems.take(5).forEach { item ->
+                Text("${item.name} (${item.type})", color = Color.Gray)
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+            Text("Distribución de colores:", color = Color.White, style = MaterialTheme.typography.bodyLarge)
+            Row(modifier = Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                colorMap.forEach { (color, count) ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(modifier = Modifier.size(24.dp).background(color.toColor()))
+                        Text("$count", color = Color.White, fontSize = 12.sp)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+            Text("Sugerencias:", color = Color.White, style = MaterialTheme.typography.bodyLarge)
+            if (forgottenItems.isNotEmpty()) {
+                Text("¡Prueba a combinar tus prendas olvidadas para nuevos looks!", color = Color.Yellow)
+            } else {
+                Text("¡Estás usando bien tu armario!", color = Color.Green)
+            }
         }
     }
+}
+
+// Utilidad para convertir ClothingColor a Color
+fun ClothingColor.toColor(): Color = when (this) {
+    ClothingColor.BLACK -> Color.Black
+    ClothingColor.WHITE -> Color.White
+    ClothingColor.BEIGE -> Color(0xFFF5F5DC)
+    ClothingColor.RED -> Color.Red
+    ClothingColor.BLUE -> Color.Blue
+    ClothingColor.GREEN -> Color.Green
+    ClothingColor.PASTEL -> Color(0xFFFFE4E1)
+    ClothingColor.BRIGHT -> Color(0xFFFFD700)
+    ClothingColor.NEUTRAL -> Color.Gray
+    ClothingColor.BROWN -> Color(0xFF8B4513)
+    ClothingColor.GRAY -> Color.LightGray
+    ClothingColor.PINK -> Color(0xFFFFC0CB)
+    else -> Color.Gray
 }

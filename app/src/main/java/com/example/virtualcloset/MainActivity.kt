@@ -60,15 +60,20 @@ import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.saveable.rememberSaveable
 
+// --- ENUMS PARA TIPO, COLOR Y ESTILO ---
+enum class ClothingType { TOP, BOTTOM, DRESS, OUTERWEAR, SHOES, SKIRT, JACKET, ACCESSORIES, COAT, BLAZER, HOODIE, OTHER }
+enum class ClothingColor { WHITE, BLACK, BEIGE, RED, BLUE, GREEN, PASTEL, BRIGHT, NEUTRAL, BROWN, GRAY, PINK, YELLOW, PURPLE, ORANGE }
+enum class ClothingStyle { CASUAL, ELEGANT, SPORTY, STREETWEAR, MINIMALIST, COMFY, TRENDY, Y2K, VINTAGE, NEUTRAL }
+
 // Data models used by the app (kept lightweight for MVP)
 data class ClothingItem(
     val id: Int,
     val name: String,
-    val category: String,  // Top, Bottom, Skirt, Dress, Jacket, Shoes, Accessories
+    val type: ClothingType,
+    val color: ClothingColor,
+    val style: ClothingStyle? = null,
     val imageUri: String? = null,
-    val styles: List<String> = emptyList(),
-    val season: String = "All-Season",
-    val color: String = "Neutral",
+    val inLaundry: Boolean = false,
     val lastUsedDate: String? = null
 )
 
@@ -110,11 +115,29 @@ class SharedViewModel : ViewModel() {
         }
     }
 
+    // --- Corrección de creación de prendas por defecto ---
     private fun addDefaultClothingItems() {
-        // Use actual drawable resources instead of leopard background
         val packageName = "com.example.virtualcloset"
-        clothingItems.add(ClothingItem(0, "Default White Top", "Top", "android.resource://$packageName/${R.drawable.default_white_top}", listOf("Casual", "Minimalist")))
-        clothingItems.add(ClothingItem(1, "Default Jeans", "Bottom", "android.resource://$packageName/${R.drawable.default_jeans}", listOf("Casual")))
+        clothingItems.add(
+            ClothingItem(
+                id = 0,
+                name = "Default White Top",
+                type = ClothingType.TOP,
+                color = ClothingColor.WHITE,
+                style = ClothingStyle.CASUAL,
+                imageUri = "android.resource://$packageName/${R.drawable.default_white_top}"
+            )
+        )
+        clothingItems.add(
+            ClothingItem(
+                id = 1,
+                name = "Default Jeans",
+                type = ClothingType.BOTTOM,
+                color = ClothingColor.BLUE,
+                style = ClothingStyle.CASUAL,
+                imageUri = "android.resource://$packageName/${R.drawable.default_jeans}"
+            )
+        )
     }
 
     // Questions expanded to include temperature, occasion, location, mood, activities, color prefs
@@ -195,8 +218,18 @@ class SharedViewModel : ViewModel() {
         )
     }
 
-    fun addClothingItem(name: String, category: String, styles: List<String>, imageUri: String?) {
-        clothingItems.add(ClothingItem(id = nextId++, name = name, category = category, styles = styles, imageUri = imageUri))
+    // --- Corrección de addClothingItem ---
+    fun addClothingItem(name: String, type: ClothingType, color: ClothingColor, style: ClothingStyle, imageUri: String?) {
+        clothingItems.add(
+            ClothingItem(
+                id = nextId++,
+                name = name,
+                type = type,
+                color = color,
+                style = style,
+                imageUri = imageUri
+            )
+        )
     }
 
     // Heurística simple: puntuar cada predefined outfit contra las respuestas y elegir la mejor
@@ -229,7 +262,8 @@ class SharedViewModel : ViewModel() {
         val resultPieces = best.pieces.mapIndexed { idx, piece ->
             // Find a clothingItem in user's closet that matches category and has any overlapping style
             val found = clothingItems.indexOfFirst { userItem ->
-                userItem.category.equals(piece.category, ignoreCase = true) || userItem.styles.any { s -> piece.styles.any { ps -> ps.equals(s, ignoreCase = true) } }
+                userItem.type.name.equals(piece.category, ignoreCase = true) ||
+                (piece.styles.any { ps -> userItem.style?.name?.equals(ps, ignoreCase = true) == true })
             }
             if (found >= 0) mapped[idx] = found else mapped[idx] = null
 
@@ -238,7 +272,14 @@ class SharedViewModel : ViewModel() {
                 clothingItems[found]
             } else {
                 // Create a placeholder ClothingItem for the suggested piece
-                ClothingItem(id = -1 - idx, name = piece.name, category = piece.category, imageUri = null, styles = piece.styles)
+                ClothingItem(
+                    id = -1 - idx,
+                    name = piece.name,
+                    type = try { ClothingType.valueOf(piece.category.uppercase()) } catch (_: Exception) { ClothingType.OTHER },
+                    color = ClothingColor.NEUTRAL, // O puedes mapear si tienes info
+                    style = piece.styles.firstOrNull()?.let { s -> try { ClothingStyle.valueOf(s.uppercase()) } catch (_: Exception) { ClothingStyle.NEUTRAL } } ?: ClothingStyle.NEUTRAL,
+                    imageUri = null
+                )
             }
         }
 
@@ -252,12 +293,12 @@ class SharedViewModel : ViewModel() {
         savedSuggestedOutfits.add(suggested)
         // also save a simple top+bottom to plannedOutfits (for calendar compatibility)
         val today = java.text.SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(java.util.Date())
-        val top = suggested.pieces.firstOrNull { it.category.equals("Top", ignoreCase = true) || it.category.equals("OnePiece", ignoreCase = true) }
-        val bottom = suggested.pieces.firstOrNull { it.category.equals("Bottom", ignoreCase = true) }
+        val top = suggested.pieces.firstOrNull { it.type == ClothingType.TOP || it.type == ClothingType.DRESS }
+        val bottom = suggested.pieces.firstOrNull { it.type == ClothingType.BOTTOM }
         if (top != null && bottom != null) {
             plannedOutfits[today] = Outfit(top = top, bottom = bottom)
         } else if (top != null) {
-            plannedOutfits[today] = Outfit(top = top, bottom = ClothingItem(-999, "Default Bottom", "Bottom"))
+            plannedOutfits[today] = Outfit(top = top, bottom = ClothingItem(-999, "Default Bottom", ClothingType.BOTTOM, ClothingColor.NEUTRAL, ClothingStyle.NEUTRAL))
         }
     }
 
@@ -267,6 +308,44 @@ class SharedViewModel : ViewModel() {
     var assistantAvatarUri by mutableStateOf<String?>(null)
 
     // Use direct property assignment for assistantPersonality (avoid JVM signature clashes)
+}
+
+// --- Lógica determinista para Match/Mismatch ---
+fun areClothesMatch(item1: ClothingItem, item2: ClothingItem): Boolean {
+    // Regla 1: Compatibilidad de tipo
+    val validType = (item1.type == ClothingType.TOP && item2.type == ClothingType.BOTTOM) ||
+                   (item1.type == ClothingType.BOTTOM && item2.type == ClothingType.TOP) ||
+                   (item1.type == ClothingType.DRESS && item2.type == ClothingType.OUTERWEAR) ||
+                   (item1.type == ClothingType.OUTERWEAR && item2.type == ClothingType.DRESS) ||
+                   (item1.type == ClothingType.TOP && item2.type == ClothingType.DRESS) ||
+                   (item1.type == ClothingType.DRESS && item2.type == ClothingType.TOP) ||
+                   (item1.type == ClothingType.BOTTOM && item2.type == ClothingType.SHOES) ||
+                   (item1.type == ClothingType.SHOES && item2.type == ClothingType.BOTTOM)
+
+    if (!validType) return false
+
+    // Regla 2: Compatibilidad de estilo
+    if (item1.style != null && item2.style != null) {
+        if (item1.style != item2.style) {
+            // Excepción: si uno es NEUTRAL, se permite
+            if (item1.style != ClothingStyle.NEUTRAL && item2.style != ClothingStyle.NEUTRAL) {
+                return false
+            }
+        }
+    }
+
+    // Regla 3: Color
+    if (item1.color == ClothingColor.WHITE || item2.color == ClothingColor.WHITE) return true
+    if (item1.color == ClothingColor.BLACK || item2.color == ClothingColor.BLACK) return true
+    if (item1.color == item2.color) return true
+    // Si ambos colores son "fuertes" y diferentes, mismatch
+    val strongColors = setOf(
+        ClothingColor.RED, ClothingColor.BLUE, ClothingColor.GREEN, ClothingColor.YELLOW, ClothingColor.PURPLE, ClothingColor.ORANGE
+    )
+    if (strongColors.contains(item1.color) && strongColors.contains(item2.color) && item1.color != item2.color) return false
+
+    // Por defecto, match
+    return true
 }
 
 class MainActivity : ComponentActivity() {
@@ -407,8 +486,8 @@ fun MyClosetScreen(viewModel: SharedViewModel) {
     if (showAddItemDialog) {
         AddItemDialog(
             onDismiss = { showAddItemDialog = false },
-            onAddItem = { name, category, styles, uri ->
-                viewModel.addClothingItem(name, category, styles, uri)
+            onAddItem = { name, type, color, style, uri ->
+                viewModel.addClothingItem(name, type, color, style, uri)
                 showAddItemDialog = false
             }
         )
@@ -434,8 +513,8 @@ fun MyClosetScreen(viewModel: SharedViewModel) {
 
 @Composable
 fun DressMeScreen(viewModel: SharedViewModel) {
-    val tops = viewModel.clothingItems.filter { it.category == "Top" }
-    val bottoms = viewModel.clothingItems.filter { it.category == "Bottom" }
+    val tops = viewModel.clothingItems.filter { it.type == ClothingType.TOP }
+    val bottoms = viewModel.clothingItems.filter { it.type == ClothingType.BOTTOM }
     var topIndex by remember { mutableStateOf(0) }
     var bottomIndex by remember { mutableStateOf(0) }
     var matchResult by remember { mutableStateOf<Boolean?>(null) }
@@ -452,7 +531,11 @@ fun DressMeScreen(viewModel: SharedViewModel) {
             OutfitDisplay(item = bottoms.getOrNull(bottomIndex), onPrev = ::prevBottom, onNext = ::nextBottom)
             Spacer(modifier = Modifier.weight(1f))
             matchResult?.let { Text(if (it) stringResource(id = R.string.match_success) else stringResource(id = R.string.match_fail), style = MaterialTheme.typography.headlineLarge.copy(color = if (it) Color.Green else Color.Red), modifier = Modifier.padding(16.dp)) }
-            CluelessButton(onClick = { matchResult = Random.nextBoolean() }, text = stringResource(id = R.string.match_button))
+            CluelessButton(onClick = {
+                val top = tops.getOrNull(topIndex)
+                val bottom = bottoms.getOrNull(bottomIndex)
+                matchResult = if (top != null && bottom != null) areClothesMatch(top, bottom) else null
+            }, text = stringResource(id = R.string.match_button))
         }
     }
 }
@@ -476,8 +559,8 @@ fun CalendarScreen(viewModel: SharedViewModel) {
     var selectedDate by remember { mutableStateOf<String?>(null) }
     var showOutfitDialog by remember { mutableStateOf(false) }
 
-    val tops = viewModel.clothingItems.filter { it.category == "Top" }
-    val bottoms = viewModel.clothingItems.filter { it.category == "Bottom" }
+    val tops = viewModel.clothingItems.filter { it.type == ClothingType.TOP }
+    val bottoms = viewModel.clothingItems.filter { it.type == ClothingType.BOTTOM }
 
     if (showOutfitDialog && selectedDate != null) {
         OutfitPlanningDialog(
@@ -746,7 +829,7 @@ fun ProfileScreen(viewModel: SharedViewModel) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String>, String?) -> Unit) {
+fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, ClothingType, ClothingColor, ClothingStyle, String?) -> Unit) {
     var name by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("Top") }
     var selectedStyle by remember { mutableStateOf("Casual") }
@@ -893,7 +976,12 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, String, List<String
                 Spacer(modifier = Modifier.height(16.dp))
 
                 CluelessButton(
-                    onClick = { onAddItem(name, category, listOf(selectedStyle), selectedImageUri?.toString()) },
+                    onClick = {
+                        val typeEnum = try { ClothingType.valueOf(category.uppercase()) } catch (e: Exception) { ClothingType.OTHER }
+                        val colorEnum = try { ClothingColor.valueOf(selectedColor.uppercase()) } catch (e: Exception) { ClothingColor.NEUTRAL }
+                        val styleEnum = try { ClothingStyle.valueOf(selectedStyle.uppercase()) } catch (e: Exception) { ClothingStyle.NEUTRAL }
+                        onAddItem(name, typeEnum, colorEnum, styleEnum, selectedImageUri?.toString())
+                    },
                     text = "SAVE"
                 )
             }
@@ -1189,7 +1277,7 @@ fun StyleTestResultContent(
                         }
 
                         Text(piece.name, style = MaterialTheme.typography.headlineSmall.copy(color = Color.Black))
-                        Text(piece.category, style = MaterialTheme.typography.bodySmall.copy(color = Color.Gray))
+                        Text(piece.type.name, style = MaterialTheme.typography.bodySmall.copy(color = Color.Gray))
 
                         if (isFromCloset) {
                             Spacer(modifier = Modifier.height(8.dp))

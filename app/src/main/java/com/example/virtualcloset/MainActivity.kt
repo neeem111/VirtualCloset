@@ -477,8 +477,7 @@ fun MainAppNavGraph(navController: NavHostController, viewModel: SharedViewModel
         composable(Screen.StyleTestResult.route) { StyleTestResultScreen(viewModel = viewModel) }
         composable(Screen.Profile.route) { ProfileScreen(viewModel) }
         composable(Screen.Calendar.route) { CalendarScreen(viewModel) }
-        // --- NUEVO: Ruta de estadísticas ---
-        composable("statistics") { StatisticsScreen(viewModel) }
+        composable(Screen.Statistics.route) { StatisticsScreen(viewModel) }
     }
 }
 
@@ -841,7 +840,7 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, ClothingType, Cloth
     val context = LocalContext.current
     val contentResolver = context.contentResolver
 
-    // --- NUEVO: Detectar color dominante al seleccionar imagen ---
+    // --- Detectar color dominante al seleccionar imagen ---
     fun detectDominantColor(uri: Uri?, onColorDetected: (String) -> Unit) {
         if (uri == null) return
         try {
@@ -951,7 +950,7 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, ClothingType, Cloth
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Clothing Type Dropdown
+                // Clothing Type Dropdown (editable tras predicción)
                 var expandedType by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(expanded = expandedType, onExpandedChange = { expandedType = !expandedType }) {
                     TextField(readOnly = true, value = category, onValueChange = {}, label = { Text("Clothing Type") },
@@ -993,7 +992,7 @@ fun AddItemDialog(onDismiss: () -> Unit, onAddItem: (String, ClothingType, Cloth
                 }
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Color Dropdown
+                // Color Dropdown (editable tras predicción)
                 var expandedColor by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(expanded = expandedColor, onExpandedChange = { expandedColor = !expandedColor }) {
                     TextField(readOnly = true, value = selectedColor, onValueChange = {}, label = { Text("Color") },
@@ -1091,7 +1090,7 @@ fun CluelessScreenContainer(overlayAlpha: Float = 0.8f, content: @Composable Box
 
 @Composable
 fun BottomNavigationBar(navController: NavController) {
-    val items = listOf(Screen.MyCloset, Screen.DressMe, Screen.Assistant, Screen.Profile)
+    val items = listOf(Screen.MyCloset, Screen.DressMe, Screen.Assistant, Screen.Profile, Screen.Statistics)
     NavigationBar(containerColor = Color.Black) {
         val navBackStackEntry by navController.currentBackStackEntryAsState()
         val currentRoute = navBackStackEntry?.destination?.route
@@ -1117,6 +1116,7 @@ sealed class Screen(val route: String, val resourceId: Int, val icon: ImageVecto
     object StyleTestResult : Screen("style_test_result", R.string.test_result_title, Icons.Default.Star)
     object Profile : Screen("profile", R.string.nav_profile, Icons.Default.Person)
     object Calendar : Screen("calendar", R.string.calendar_title, Icons.Default.DateRange)
+    object Statistics : Screen("statistics", R.string.statistics_title, Icons.Default.BarChart)
 }
 
 // Style test flow (multi-step questions) - reintroduced
